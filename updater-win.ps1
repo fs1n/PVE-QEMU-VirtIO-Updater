@@ -6,6 +6,12 @@
 .NOTES
 #>
 
+if ($env:OS -ne "Windows_NT") {
+    Write-Host "Dieses Script läuft nur auf Windows!" -ForegroundColor Red
+    Write-Host "Aktuelles System: $($PSVersionTable.OS)" -ForegroundColor Yellow
+    exit 1
+}
+
 # Region Variables
 
 # Define Variables
