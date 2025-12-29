@@ -159,4 +159,16 @@ try {
     exit 1
 }
 
+$CleanupConfirm = Read-Host "Should the downloaded MSI file be deleted? (Y/N)"
+if ($CleanupConfirm -match "^[Yy]") {
+    try {
+        Remove-Item -Path $outputPath -Force
+        Write-Log -Message "Deleted downloaded MSI file: $outputPath" -Level "Info"
+    } catch {
+        Write-Log -Message "Failed to delete downloaded MSI file: $outputPath. Error: $_" -Level "Warning"
+    }
+} else {
+    Write-Log -Message "Downloaded MSI file retained at: $outputPath" -Level "Info"
+}
+
 # EndRegion
