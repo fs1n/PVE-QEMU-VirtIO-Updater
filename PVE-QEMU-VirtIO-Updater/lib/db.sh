@@ -8,4 +8,3 @@ function init_data_json() {
     fi
 }
 
-function 

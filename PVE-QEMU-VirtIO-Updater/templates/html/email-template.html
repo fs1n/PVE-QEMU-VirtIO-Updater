@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VirtIO Update Notification</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 100%;
+            width: 100%;
+            margin: 0;
+            background-color: #ffffff;
+            border-radius: 0;
+            overflow: hidden;
+            box-shadow: none;
+        }
+        .header {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .vm-info {
+            background-color: #f9f9f9;
+            border-left: 4px solid #e74c3c;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .vm-info p {
+            margin: 8px 0;
+        }
+        .update-details {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .version-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #bdc3c7;
+        }
+        .version-row:last-child {
+            border-bottom: none;
+        }
+        .label {
+            font-weight: 600;
+            color: #555;
+        }
+        .version {
+            color: #27ae60;
+            font-weight: 600;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #e74c3c;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-weight: 600;
+            transition: background-color 0.3s;
+        }
+        .cta-button:hover {
+            background-color: #c0392b;
+        }
+        .footer {
+            background-color: #f9f9f9;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #7f8c8d;
+            border-top: 1px solid #ecf0f1;
+        }
+        .divider {
+            height: 1px;
+            background-color: #ecf0f1;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚠️ VirtIO Update Available</h1>
+        </div>
+        
+        <div class="content">
+            <p>Hello,</p>
+            
+            <p>An update notification for your Proxmox VE virtual machine has been detected.</p>
+            
+            <div class="vm-info">
+                <p><strong>Virtual Machine:</strong> {{VM_NAME}}</p>
+                <p><strong>VM ID:</strong> {{VMID}}</p>
+                <p><strong>Node:</strong> {{NODE_NAME}}</p>
+            </div>
+            
+            <h2>Available Updates</h2>
+            
+            <div class="update-details">
+                <div class="version-row">
+                    <span class="label">Software</span>
+                    <span class="label">Current</span>
+                    <span class="label">Latest</span>
+                </div>
+                <div class="divider"></div>
+                <div class="version-row">
+                    <span>VirtIO Drivers</span>
+                    <span>{{CURRENT_VIRTIO_VERSION}}</span>
+                    <span class="version">{{LATEST_VIRTIO_VERSION}}</span>
+                </div>
+                <div class="version-row">
+                    <span>QEMU Guest Agent</span>
+                    <span>{{CURRENT_QEMU_GA_VERSION}}</span>
+                    <span class="version">{{LATEST_QEMU_GA_VERSION}}</span>
+                </div>
+            </div>
+            
+            <p><strong>Release Date:</strong> {{RELEASE_DATE}}</p>
+            
+            <p>We recommend updating your drivers and guest agent to ensure optimal performance and security.</p>
+            
+            <a href="{{UPDATE_LINK}}" class="cta-button">View Update Instructions</a>
+            
+            <div class="divider"></div>
+            
+            <p style="font-size: 12px; color: #7f8c8d;">
+                This is an automated notification from your Proxmox VE VirtIO Updater.
+                <br>Last checked: {{LAST_CHECKED}}
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; 2025 Proxmox VE VirtIO Updater | <a href="https://github.com/fs1n/PVE-QEMU-VirtIO-Updater" style="color: #3498db; text-decoration: none;">GitHub</a></p>
+        </div>
+    </div>
+</body>
+</html>
