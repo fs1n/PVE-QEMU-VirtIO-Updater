@@ -78,3 +78,19 @@ function update_vm_description_with_virtio_update_nag() {
     
     log_info "Updated description for VM $vmid with VirtIO update nag."
 }
+
+
+get_vm_creation_date() {
+    local node=$1
+    local vmid=$2
+    
+    local ctime=$(pvesh get /nodes/$node/qemu/$vmid/config --output-format json | \
+        jq -r '.meta // empty' | \
+        grep -oP 'ctime=\K[0-9]+')
+    
+    if [ -n "$ctime" ]; then
+        date -d "@$ctime" '+%Y-%m-%d %H:%M:%S'
+    else
+        echo "unknown"
+    fi
+}
