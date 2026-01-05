@@ -45,8 +45,13 @@ fi
 
 # ToDo: Add Check if VM is running -> skip and log if VM is not running
 
-CurrentVirtIOVersion=$(fetch_latest_virtio_version)
-CurrentQEMUGAVersion=$(fetch_latest_qemu_ga_version)
+virtio_info=$(fetch_latest_virtio_version)
+CurrentVirtIOVersion=$(echo "$virtio_info" | jq -r '.version')
+CurrentVirtIORelease=$(echo "$virtio_info" | jq -r '.release')
+
+qemu_info=$(fetch_latest_qemu_ga_version)
+CurrentQEMUGAVersion=$(echo "$qemu_info" | jq -r '.version')
+CurrentQEMUGARelease=$(echo "$qemu_info" | jq -r '.release')
 
 for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
   VirtIO_version=$(get_windows_virtio_version "$vmid")
@@ -64,10 +69,10 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
       build_svg_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$(date '+%Y-%m-%d')"
     elif [[ "$need_virtio" == true ]]; then
       # Nur VirtIO Update
-      build_svg_virtio_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$(date '+%Y-%m-%d')"
+      build_svg_virtio_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$CurrentVirtIORelease"
     else
       # Nur QEMU GA Update
-      build_svg_qemu_ga_update_nag "$vmid" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$(date '+%Y-%m-%d')"
+      build_svg_qemu_ga_update_nag "$vmid" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$CurrentQEMUGARelease"
     fi
     
     update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"

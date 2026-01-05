@@ -12,68 +12,84 @@ function check_script_dependencies() {
     return 0
 }
 
-function fetch_latest_virtio_version() {
-        readonly FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/"
-        readonly MSI_FILENAME="virtio-win-gt-x64.msi"
+fetch_latest_virtio_version() {
+    local FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/"
 
-        archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || log_error "Failed to fetch Fedora People Archive page"
+    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || \
+        log_error "Failed to fetch Fedora People Archive page"
 
-        # Extract HTTP status code (last line)
-        http_code=$(echo "$archive_page" | tail -n1)
-        page_content=$(echo "$archive_page" | head -n-1)
+    http_code=$(echo "$archive_page" | tail -n1)
+    page_content=$(echo "$archive_page" | head -n-1)
 
-        if [ "$http_code" != "200" ]; then
-            log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
-        fi
+    if [ "$http_code" != "200" ]; then
+        log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+    fi
 
-        log_info "Successfully accessed Fedora People Archive"
+    # Jede Zeile mit virtio-win-* + Datum parsen
+    latest_json=$(echo "$page_content" |
+        awk '
+          /virtio-win-[0-9.]+-[0-9]+\// {
+              # Beispielzeile (vereinfacht):
+              # <a href="...virtio-win-0.1.285-1/">virtio-win-0.1.285-1</a>  2025-09-15 17:26  -
+              match($0, /virtio-win-[0-9.]+-[0-9]+/, m)
+              if (m[0] != "") {
+                  version = m[0]
+                  # Datum + Zeit: suche Muster YYYY-MM-DD HH:MM
+                  match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}/, d)
+                  if (d[0] != "") {
+                      date = d[0]
+                      print version " " date
+                  }
+              }
+          }
+        ' |
+        sort -V |
+        tail -n1 |
+        awk '{ver=$1; $1=""; sub(/^ /, "", $0); printf("{\"version\":\"%s\",\"release\":\"%s\"}\n", ver, $0)}'
+    )
 
-        # Extract and parse directory links
-        log_info "Parsing directory links for virtio-win versions"
-        latest_version=$(echo "$page_content" | \
-            grep -oP 'href="virtio-win-[\d\.]+-\d+/"' | \
-            sed 's/href="virtio-win-//;s/\/"$//' | \
-            sort -V | \
-            tail -n1)
+    if [ -z "$latest_json" ]; then
+        log_error "Could not find any virtio-win directory versions"
+    fi
 
-        if [ -z "$latest_version" ]; then
-            log_error "Could not find any virtio-win directory versions"
-        fi
-
-        log_info "Latest version found: ${latest_version}"
-
-        echo "$latest_version"
+    echo "$latest_json"
 }
 
-function fetch_latest_qemu_ga_version() {
-        readonly FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/"
-        readonly MSI_FILENAME="qemu-ga-x86_64.msi"
+fetch_latest_qemu_ga_version() {
+    local FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/"
 
-        archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || log_error "Failed to fetch Fedora People Archive page"
+    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || \
+        log_error "Failed to fetch Fedora People Archive page"
 
-        # Extract HTTP status code (last line)
-        http_code=$(echo "$archive_page" | tail -n1)
-        page_content=$(echo "$archive_page" | head -n-1)
+    http_code=$(echo "$archive_page" | tail -n1)
+    page_content=$(echo "$archive_page" | head -n-1)
 
-        if [ "$http_code" != "200" ]; then
-            log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
-        fi
+    if [ "$http_code" != "200" ]; then
+        log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+    fi
 
-        log_info "Successfully accessed Fedora People Archive"
+    latest_json=$(echo "$page_content" |
+        awk '
+          /qemu-ga-win-[^"]+\// {
+              match($0, /qemu-ga-win-[^/"]+/, m)
+              if (m[0] != "") {
+                  version = m[0]
+                  match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}/, d)
+                  if (d[0] != "") {
+                      date = d[0]
+                      print version " " date
+                  }
+              }
+          }
+        ' |
+        sort -V |
+        tail -n1 |
+        awk '{ver=$1; $1=""; sub(/^ /, "", $0); printf("{\"version\":\"%s\",\"release\":\"%s\"}\n", ver, $0)}'
+    )
 
-        # Extract and parse directory links
-        log_info "Parsing directory links for qemu-ga-win versions"
-        latest_version=$(echo "$page_content" | \
-            grep -oP 'href="qemu-ga-win-[^"]+/"' | \
-            sed 's/href="qemu-ga-win-//;s/\/"$//' | \
-            sort -V | \
-            tail -n1)
+    if [ -z "$latest_json" ]; then
+        log_error "Could not find any qemu-ga-win directory versions"
+    fi
 
-        if [ -z "$latest_version" ]; then
-            log_error "Could not find any qemu-ga-win directory versions"
-        fi
-
-        log_info "Latest version found: ${latest_version}"
-
-        echo "$latest_version"
+    echo "$latest_json"
 }
