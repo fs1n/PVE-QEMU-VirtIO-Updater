@@ -38,7 +38,7 @@ function get_windows_vms() {
 function get_windows_virtio_version() {
     local vmid=$1
     # Use guest-agent to get the VirtIO driver version inside the Windows VM
-    version=$(qm guest exec $vmid --cmd "powershell -Command \"(Get-WmiObject Win32_PnPSignedDriver | Where-Object { \$_.DeviceName -like '*VirtIO*' } | Select-Object -First 1).DriverVersion\"" 2>/dev/null | tr -d '\r')
+    version=$(qm guest exec $vmid -- powershell.exe -Command 'Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object { $_.DisplayName } | Where-Object { $_.DisplayName -like "*virtio*installer*" } | Select-Object -ExpandProperty DisplayVersion' 2>/dev/null | jq -r '.["out-data"]' | tr -d '\r\n')
     echo "$version"
 }
 

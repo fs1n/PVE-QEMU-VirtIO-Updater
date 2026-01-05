@@ -26,10 +26,11 @@ fetch_latest_virtio_version() {
     latest_json=$(echo "$page_content" |
         awk '
           /virtio-win-[0-9.]+-[0-9]+/ {
-              # z.B.: ... virtio-win-0.1.285-1/ ... 2025-09-15 17:26 ...
-              match($0, /virtio-win-([0-9.]+-[0-9]+)/, m)
+              # e.g.: ... virtio-win-0.1.285-1/ ... 2025-09-15 17:26 ...
+              # capture only 0.1.285 (without the -1)
+              match($0, /virtio-win-([0-9.]+)-[0-9]+\//, m)
               if (m[1] != "") {
-                  version = m[1]   # 0.1.285-1
+                  version = m[1]   # 0.1.285
                   match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/, d)
                   if (d[0] != "") {
                       date = d[0]
@@ -42,6 +43,7 @@ fetch_latest_virtio_version() {
         tail -n1 |
         awk '{ver=$1; $1=""; sub(/^ /, "", $0); printf("{\"version\":\"%s\",\"release\":\"%s\"}\n", ver, $0)}'
     )
+
 
     if [ -z "$latest_json" ]; then
         log_error "Could not find any virtio-win directory versions"
