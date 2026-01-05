@@ -79,3 +79,5 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
     update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
   fi
 done
+
+log_info "Update check completed."
