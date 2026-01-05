@@ -20,7 +20,7 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 ##################################################################################
-# Init                                                                           #
+#                                   Init                                         #
 ##################################################################################
 
 init_logger \
@@ -39,13 +39,22 @@ if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then
     exit 0
 fi
 
+##################################################################################
+#                             Check for Updates                                 #
+##################################################################################
+
 for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
     VirtIO_version=$(get_windows_virtio_version "$vmid")
     QEMU_GA_version=$(get_windows_QEMU_GA_version "$vmid")
+    # ToDo: Set correct N/A value so the IF conditions works
+    if [[ "$VirtIO_version" != "N/A" && "$VirtIO_version" != "$AktuelleVersion" ]] || [[ "$QEMU_GA_version" != "N/A" && "$QEMU_GA_version" != "$AktuelleVersion2" ]]
+    then
+      # update‑Block
+    fi
 
-    # Write to JSON database
-    update_data_json "$vmid" "current_VirtIO_version" "$VirtIO_version"
-    update_data_json "$vmid" "current_QEMU_GA_version" "$QEMU_GA_version"
-done
+    if [[ "$VirtIO_version" == "N/A" || "$QEMU_GA_version" == "N/A" ]]; then
+      log_error "Version is N/A or could not be determined for VMID $vmid. Skipping update."
+    fi
+
 
     
