@@ -66,9 +66,9 @@ fetch_latest_qemu_ga_version() {
     latest_json=$(echo "$page_content" |
         awk '
           /qemu-ga-win-[^"]+\// {
-              match($0, /qemu-ga-win-([^/"]+)/, m)
-              if (m[1] != "") {
-                  version = m[1]
+          	  match($0, /qemu-ga-win-([0-9]+\.[0-9]+\.[0-9]+)/, m)
+	  		  if (m[1] != "") {
+ 			      version = m[1]
                   match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/, d)
                   if (d[0] != "") {
                       date = d[0]
