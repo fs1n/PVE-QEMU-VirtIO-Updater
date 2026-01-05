@@ -48,15 +48,17 @@ function get_windows_QEMU_GA_version() {
     echo "$version"
 }
 
-function update_vm_description_with_virtio_update_nag() {
+function update_vm_description_with_update_nag() {
     local node=$1
     local vmid=$2
+    local need_virtio="$3"
+    local need_qemu_ga="$4"
     
     current_vm_config=$(pvesh get /nodes/$node/qemu/$vmid/config --output-format json)
     
     current_description=$(echo "$current_vm_config" | jq -r '.description // empty')
     
-    update_banner='<img src="/pve2/images/virtio-update-'$vmid'.svg" alt="VirtIO Update" />'
+    update_banner='<img src="/pve2/images/update-'$vmid'.svg" alt="VirtIO Update" />'
     
     # Check if description exists and is not empty
     if [ -z "$current_description" ] || [ "$current_description" = "null" ]; then

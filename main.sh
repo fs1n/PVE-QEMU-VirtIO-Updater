@@ -43,18 +43,33 @@ fi
 #                             Check for Updates                                 #
 ##################################################################################
 
+# ToDo: Add Check if VM is running -> skip and log if VM is not running
+
+CurrentVirtIOVersion=$(fetch_latest_virtio_version)
+CurrentQEMUGAVersion=$(fetch_latest_qemu_ga_version)
+
 for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
-    VirtIO_version=$(get_windows_virtio_version "$vmid")
-    QEMU_GA_version=$(get_windows_QEMU_GA_version "$vmid")
-    # ToDo: Set correct N/A value so the IF conditions works
-    if [[ "$VirtIO_version" != "N/A" && "$VirtIO_version" != "$AktuelleVersion" ]] || [[ "$QEMU_GA_version" != "N/A" && "$QEMU_GA_version" != "$AktuelleVersion2" ]]
-    then
-      # update‑Block
-    fi
+  VirtIO_version=$(get_windows_virtio_version "$vmid")
+  QEMU_GA_version=$(get_windows_QEMU_GA_version "$vmid")
 
-    if [[ "$VirtIO_version" == "N/A" || "$QEMU_GA_version" == "N/A" ]]; then
-      log_error "Version is N/A or could not be determined for VMID $vmid. Skipping update."
-    fi
+  need_virtio=false
+  need_qemu_ga=false
 
-
+  # Only if update is available we set the flag to true
+  if [[ "$need_virtio" == true || "$need_qemu_ga" == true ]]; then
+    node=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].node')
     
+    if [[ "$need_virtio" == true && "$need_qemu_ga" == true ]]; then
+      # Beide Updates verfügbar
+      build_svg_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$(date '+%Y-%m-%d')"
+    elif [[ "$need_virtio" == true ]]; then
+      # Nur VirtIO Update
+      build_svg_virtio_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$(date '+%Y-%m-%d')"
+    else
+      # Nur QEMU GA Update
+      build_svg_qemu_ga_update_nag "$vmid" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$(date '+%Y-%m-%d')"
+    fi
+    
+    update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
+  fi
+done
