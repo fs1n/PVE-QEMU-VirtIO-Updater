@@ -1,5 +1,3 @@
-#!/bin/env bash
-
 function check_script_dependencies() {
     local dependencies=( "curl" "jq")
     for dep in "${dependencies[@]}"; do
@@ -25,17 +23,14 @@ fetch_latest_virtio_version() {
         log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
     fi
 
-    # Jede Zeile mit virtio-win-* + Datum parsen
     latest_json=$(echo "$page_content" |
         awk '
-          /virtio-win-[0-9.]+-[0-9]+\// {
-              # Beispielzeile (vereinfacht):
-              # <a href="...virtio-win-0.1.285-1/">virtio-win-0.1.285-1</a>  2025-09-15 17:26  -
-              match($0, /virtio-win-[0-9.]+-[0-9]+/, m)
-              if (m[0] != "") {
-                  version = m[0]
-                  # Datum + Zeit: suche Muster YYYY-MM-DD HH:MM
-                  match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}/, d)
+          /virtio-win-[0-9.]+-[0-9]+/ {
+              # z.B.: ... virtio-win-0.1.285-1/ ... 2025-09-15 17:26 ...
+              match($0, /virtio-win-([0-9.]+-[0-9]+)/, m)
+              if (m[1] != "") {
+                  version = m[1]   # 0.1.285-1
+                  match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/, d)
                   if (d[0] != "") {
                       date = d[0]
                       print version " " date
@@ -71,10 +66,10 @@ fetch_latest_qemu_ga_version() {
     latest_json=$(echo "$page_content" |
         awk '
           /qemu-ga-win-[^"]+\// {
-              match($0, /qemu-ga-win-[^/"]+/, m)
-              if (m[0] != "") {
-                  version = m[0]
-                  match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}/, d)
+              match($0, /qemu-ga-win-([^/"]+)/, m)
+              if (m[1] != "") {
+                  version = m[1]
+                  match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/, d)
                   if (d[0] != "") {
                       date = d[0]
                       print version " " date

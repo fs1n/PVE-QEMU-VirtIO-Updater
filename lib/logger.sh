@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #
+# https://gist.github.com/GingerGraham/99af97eed2cd89cd047a2088947a5405
+#
 # logging.sh - Reusable Bash Logging Module
 # 
 # This script provides logging functionality that can be sourced by other scripts

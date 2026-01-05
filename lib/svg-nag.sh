@@ -1,5 +1,3 @@
-#!/bin/env bash
-
 SVG_IMAGE_PATH="/usr/share/pve-manager/images/"
 SVG_IMAGE_TEMPLATE="${SCRIPT_DIR}/templates/svg/update-nag-template.svg"
 

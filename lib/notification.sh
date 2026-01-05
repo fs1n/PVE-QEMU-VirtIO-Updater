@@ -1,6 +1,3 @@
-#!/bin/env bash
-# Notification Library for Proxmox VE VirtIO / QEMU GA Updater Script
-
 function notification_send() {
     # Todo: Implement notification logic here
     :

@@ -35,17 +35,16 @@ init_logger \
 
 check_script_dependencies
 
-windows_vms=$(get_windows_vms)
-if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then
-    log_info "No Windows VMs found on this Proxmox host. Exiting."
-    exit 0
-fi
-
 ##################################################################################
 #                             Check for Updates                                 #
 ##################################################################################
 
-# ToDo: Add Check if VM is running -> skip and log if VM is not running
+windows_vms=$(get_windows_vms | jq 'to_entries | map(select(.value.status == "running")) | from_entries')
+
+if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then
+    log_info "No Windows VMs found on this Proxmox host. Exiting."
+    exit 0
+fi
 
 virtio_info=$(fetch_latest_virtio_version)
 CurrentVirtIOVersion=$(echo "$virtio_info" | jq -r '.version')
@@ -62,18 +61,18 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
   need_virtio=false
   need_qemu_ga=false
 
-  # Only if update is available we set the flag to true
+  # Only if an update is available set the flag to true
   if [[ "$need_virtio" == true || "$need_qemu_ga" == true ]]; then
     node=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].node')
     
     if [[ "$need_virtio" == true && "$need_qemu_ga" == true ]]; then
-      # Beide Updates verfügbar
+      # Both Updates available
       build_svg_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$(date '+%Y-%m-%d')"
     elif [[ "$need_virtio" == true ]]; then
-      # Nur VirtIO Update
+      # Only VirtIO Update
       build_svg_virtio_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$CurrentVirtIORelease"
     else
-      # Nur QEMU GA Update
+      # Only QEMU GA Update
       build_svg_qemu_ga_update_nag "$vmid" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$CurrentQEMUGARelease"
     fi
     
