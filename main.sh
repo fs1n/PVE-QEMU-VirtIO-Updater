@@ -67,7 +67,7 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
     
     if [[ "$need_virtio" == true && "$need_qemu_ga" == true ]]; then
       # Both Updates available
-      build_svg_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$(date '+%Y-%m-%d')"
+      build_svg_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$CurrentVirtIORelease" "$CurrentQEMUGARelease"
     elif [[ "$need_virtio" == true ]]; then
       # Only VirtIO Update
       build_svg_virtio_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$CurrentVirtIORelease"
