@@ -26,7 +26,8 @@ function get_windows_vms() {
             # Matches: wxp, w2k, w2k3, w2k8, wvista, win7, win8, win10, win11 -> Well documented in the PVE API docs (https://pve.proxmox.com/pve-docs/api-viewer/index.html#/nodes/{node}/qemu/{vmid}/config -> ctrl+f "ostype") available ostypes are documented there.
             vm_name=$(echo "$vm_config" | jq -r '.name // empty')
             status=$(pvesh get /nodes/$node/qemu/$vmid/status/current --output-format json | jq -r '.status')
-            json_output+="\"$vmid\": {\"node\": \"$node\", \"name\": \"$vm_name\", \"ostype\": \"$os_type\", \"status\": \"$status\"},"
+            vmgenid=$(echo "$vm_config" | jq -r '.vmgenid // empty')
+            json_output+="\"$vmid\": {\"node\": \"$node\", \"name\": \"$vm_name\", \"ostype\": \"$os_type\", \"status\": \"$status\", \"vmgenid\": \"$vmgenid\"},"
         fi
     done
     # Remove trailing comma and close JSON object

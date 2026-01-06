@@ -15,10 +15,8 @@ get_vm_genid() {
     local node=$1
     local vmid=$2
     
-    local vm_config=$(pvesh get /nodes/$node/qemu/$vmid/config --output-format json)
-    
-    # Extract vmgenid from config
-    local vmgenid=$(echo "$vm_config" | jq -r '.vmgenid // empty')
+    # Extract vmgenid from windows_vms variable
+    local vmgenid=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].vmgenid // empty')
     
     if [[ -z "$vmgenid" || "$vmgenid" == "null" ]]; then
         # Fallback: if vmgenid not set, use ctime+name
