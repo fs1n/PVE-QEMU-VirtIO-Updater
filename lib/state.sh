@@ -3,7 +3,7 @@
 
 STATE_DIR="${STATE_DIR:-$SCRIPT_DIR/.state}"
 
-# Ensure state directory exists
+# Ensure state directory exists (call once at startup)
 init_state_dir() {
     if [[ ! -d "$STATE_DIR" ]]; then
         mkdir -p "$STATE_DIR"
@@ -11,17 +11,40 @@ init_state_dir() {
     fi
 }
 
-# Save current VM state after checking versions
+# Get VM Generation ID (unique identifier that changes on clone/restore)
+get_vm_genid() {
+    local node=$1
+    local vmid=$2
+    
+    local vm_config=$(pvesh get /nodes/$node/qemu/$vmid/config --output-format json)
+    
+    # Extract vmgenid from config
+    local vmgenid=$(echo "$vm_config" | jq -r '.vmgenid // empty')
+    
+    if [[ -z "$vmgenid" || "$vmgenid" == "null" ]]; then
+        # Fallback: if vmgenid not set, use ctime+name
+        local ctime=$(echo "$vm_config" | jq -r '.meta // empty' | grep -oP 'ctime=\K[0-9]+' || echo "0")
+        local vm_name=$(echo "$vm_config" | jq -r '.name // "unnamed"')
+        echo "fallback-${ctime}-${vm_name}"
+        log_warn "VM $vmid has no vmgenid, using fallback identifier"
+    else
+        echo "$vmgenid"
+    fi
+}
+
+# Save current VM state with identity tracking
 save_vm_state() {
     local vmid=$1
     local virtio_ver=$2
     local qemu_ga_ver=$3
-    local nag_shown=$4  # true/false
+    local nag_shown=$4
+    local vmgenid=$5
     
     local state_file="$STATE_DIR/vm-${vmid}.state"
     
     cat > "$state_file" <<EOF
 # Auto-generated state file for VM $vmid
+VMGENID="$vmgenid"
 LAST_CHECKED=$(date +%s)
 LAST_CHECKED_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
 VIRTIO_VERSION="$virtio_ver"
@@ -29,7 +52,7 @@ QEMU_GA_VERSION="$qemu_ga_ver"
 NAG_ACTIVE=$nag_shown
 EOF
     
-    log_debug "Saved state for VM $vmid: VirtIO=$virtio_ver, QEMU-GA=$qemu_ga_ver, Nag=$nag_shown"
+    log_debug "Saved state for VM $vmid (genid: $vmgenid): VirtIO=$virtio_ver, QEMU-GA=$qemu_ga_ver, Nag=$nag_shown"
 }
 
 # Load VM state from file
@@ -39,13 +62,13 @@ load_vm_state() {
     
     if [[ ! -f "$state_file" ]]; then
         return 1  # No state file exists
-        log_debug "No state file for VM $vmid"
     fi
     
     # Source the state file to load variables
     source "$state_file"
     
     # Export variables so caller can access them
+    export STORED_VMGENID="${VMGENID:-unknown}"
     export STORED_VIRTIO_VERSION="$VIRTIO_VERSION"
     export STORED_QEMU_GA_VERSION="$QEMU_GA_VERSION"
     export STORED_NAG_ACTIVE="$NAG_ACTIVE"
@@ -61,12 +84,20 @@ should_show_nag() {
     local latest_virtio=$3
     local current_qemu_ga=$4
     local latest_qemu_ga=$5
+    local current_vmgenid=$6
     
     # Load previous state
     if ! load_vm_state "$vmid"; then
         # No state exists, this is first run
         log_debug "No state for VM $vmid, will check for updates"
-        return 0  # Show nag if updates available
+        return 0
+    fi
+    
+    # Check if this is the same VM instance
+    if [[ "$STORED_VMGENID" != "$current_vmgenid" ]]; then
+        log_info "VM $vmid was cloned/restored/replaced (old genid: $STORED_VMGENID, new genid: $current_vmgenid) - treating as new VM"
+        # This is a different VM instance, start fresh
+        return 0
     fi
     
     # Check if VM is already up to date
@@ -140,9 +171,6 @@ remove_vm_nag() {
     fi
     
     log_info "Removed update nag from VM $vmid"
-    
-    # Update state to reflect nag removal
-    save_vm_state "$vmid" "$current_virtio" "$current_qemu_ga" "false"
 }
 
 # Clean up state files for VMs that no longer exist
