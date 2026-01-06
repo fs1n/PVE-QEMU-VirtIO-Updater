@@ -43,6 +43,7 @@ init_state_dir
 ##################################################################################
 
 windows_vms=$(get_windows_vms | jq 'to_entries | map(select(.value.status == "running")) | from_entries')
+windows_vms_all=$(get_windows_vms)
 
 if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then
     log_info "No Windows VMs found on this Proxmox host. Exiting."
@@ -50,7 +51,7 @@ if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then
 fi
 
 # Clean up state files for deleted VMs
-cleanup_stale_state_files "$windows_vms"
+cleanup_stale_state_files "$windows_vms_all"
 
 virtio_info=$(fetch_latest_virtio_version)
 CurrentVirtIOVersion=$(echo "$virtio_info" | jq -r '.version')

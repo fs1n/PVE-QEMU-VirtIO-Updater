@@ -2,10 +2,13 @@
 
 STATE_DIR="${STATE_DIR:-$SCRIPT_DIR/.state}"
 
-# Ensure state directory exists (call once at startup)
+# Ensure state directory exists (called once at startup in main.sh)
 init_state_dir() {
     if [[ ! -d "$STATE_DIR" ]]; then
-        mkdir -p "$STATE_DIR"
+        if ! mkdir -p "$STATE_DIR"; then  
+            log_error "Failed to create state directory: $STATE_DIR"  
+            return 1  
+        fi
         log_debug "Created state directory: $STATE_DIR"
     fi
 }
@@ -15,8 +18,9 @@ get_vm_genid() {
     local node=$1
     local vmid=$2
     
-    # Extract vmgenid from windows_vms variable
-    local vmgenid=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].vmgenid // empty')
+    local vmgenid
+    # Prefer vmgenid from windows_vms; if missing/null, fall back to an identifier derived from vm_config (ctime+name) 
+    vmgenid=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].vmgenid // empty') 
     
     if [[ -z "$vmgenid" || "$vmgenid" == "null" ]]; then
         # Fallback: if vmgenid not set, use ctime+name
@@ -36,10 +40,11 @@ save_vm_state() {
     local qemu_ga_ver=$3
     local nag_shown=$4
     local vmgenid=$5
-    
+
     local state_file="$STATE_DIR/vm-${vmid}.state"
-    
-    cat > "$state_file" <<EOF
+
+    {
+        cat > "$state_file" <<EOF
 # Auto-generated state file for VM $vmid
 VMGENID="$vmgenid"
 LAST_CHECKED=$(date +%s)
@@ -48,33 +53,71 @@ VIRTIO_VERSION="$virtio_ver"
 QEMU_GA_VERSION="$qemu_ga_ver"
 NAG_ACTIVE=$nag_shown
 EOF
-    
-    log_debug "Saved state for VM $vmid (genid: $vmgenid): VirtIO=$virtio_ver, QEMU-GA=$qemu_ga_ver, Nag=$nag_shown"
+    } || {
+        log_error "Failed to save state for VM $vmid to '$state_file' (disk full? permissions?)"
+        return 1
+    }
+
+    log_debug "Saved state for VM $vmid to '$state_file'"
 }
 
-# Load VM state from file
+# Load VM state from file using Line by Line parsing
+# Idea based on https://stackoverflow.com/questions/1521462/looping-through-the-content-of-a-file-in-bash
 load_vm_state() {
     local vmid=$1
     local state_file="$STATE_DIR/vm-${vmid}.state"
     
     if [[ ! -f "$state_file" ]]; then
-        return 1  # No state file exists
+        return 1
     fi
     
-    # Source the state file to load variables
-    source "$state_file"
+    # Initialize variables with defaults
+    local vmgenid="unknown"
+    local virtio_version=""
+    local qemu_ga_version=""
+    local nag_active="false"
+    local last_checked="0"
     
-    # Export variables so caller can access them
-    export STORED_VMGENID="${VMGENID:-unknown}"
-    export STORED_VIRTIO_VERSION="$VIRTIO_VERSION"
-    export STORED_QEMU_GA_VERSION="$QEMU_GA_VERSION"
-    export STORED_NAG_ACTIVE="$NAG_ACTIVE"
-    export STORED_LAST_CHECKED="$LAST_CHECKED"
+    while IFS='=' read -r key value; do
+        # Skip comments and empty lines
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "$key" ]] && continue
+        
+        # Trim whitespace
+        # Hope AI didn't lie^^ but it seems to work out in my tests
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
+        
+        # Remove surrounding quotes if present
+        value="${value#\"}"
+        value="${value%\"}"
+        
+        # Match known keys only (whitelist approach)
+        # Maby a source for issues but safer than eval and safer than source / dot sourcing an "untrusted" file
+        case "$key" in
+            VMGENID) vmgenid="$value" ;;
+            VIRTIO_VERSION) virtio_version="$value" ;;
+            QEMU_GA_VERSION) qemu_ga_version="$value" ;;
+            NAG_ACTIVE) nag_active="$value" ;;
+            LAST_CHECKED) last_checked="$value" ;;
+            LAST_CHECKED_DATE) ;; # Ignore, just for human readability
+            *) log_warn "Unknown key in state file: $key" ;;
+        esac
+    done < "$state_file"
+    
+    # Export with validation
+    export STORED_VMGENID="$vmgenid"
+    export STORED_VIRTIO_VERSION="$virtio_version"
+    export STORED_QEMU_GA_VERSION="$qemu_ga_version"
+    export STORED_NAG_ACTIVE="$nag_active"
+    export STORED_LAST_CHECKED="$last_checked"
     
     return 0
 }
 
-# Check if nag should be displayed for this VM
+# Check if nag should be displayed for this VM based on current and stored state
 should_show_nag() {
     local vmid=$1
     local current_virtio=$2
@@ -109,14 +152,14 @@ should_show_nag() {
         qemu_ga_uptodate=true
     fi
     
-    # If both are up to date, no nag needed
+    # If both are up to date, no nag is needed
     if [[ "$virtio_uptodate" == true && "$qemu_ga_uptodate" == true ]]; then
         log_debug "VM $vmid is up to date (VirtIO: $current_virtio, QEMU-GA: $current_qemu_ga)"
         
         # If nag was previously active, remove it
         if [[ "$STORED_NAG_ACTIVE" == "true" ]]; then
             log_info "VM $vmid is now up to date, removing update nag"
-            return 2  # Special code: remove existing nag
+            return 2  # Special exit code: remove existing nag
         fi
         
         return 1  # No nag needed
@@ -137,37 +180,6 @@ should_show_nag() {
     
     # Default: show nag if updates available
     return 0
-}
-
-# Remove update nag from VM description
-remove_vm_nag() {
-    local node=$1
-    local vmid=$2
-    
-    local current_vm_config=$(pvesh get /nodes/$node/qemu/$vmid/config --output-format json)
-    local current_description=$(echo "$current_vm_config" | jq -r '.description // empty')
-    
-    # Check if nag exists in description
-    if [[ -z "$current_description" ]] || ! echo "$current_description" | grep -q "update-$vmid.svg"; then
-        log_debug "No update nag found for VM $vmid"
-        return 0
-    fi
-    
-    # Remove the nag banner and separator
-    local new_description=$(echo "$current_description" | sed -E "s|<img src=\"/pve2/images/update-$vmid\.svg\"[^>]*/>(<hr/>)?||g")
-    
-    # Clean up any leftover empty lines or double separators
-    new_description=$(echo "$new_description" | sed -E 's|<hr/>(<hr/>)+|<hr/>|g' | sed -E 's|^<hr/>||' | sed -E 's|<hr/>$||')
-    
-    # Update VM description
-    if [[ -n "$new_description" && "$new_description" != "null" ]]; then
-        qm set $vmid -description "$new_description"
-    else
-        # Description is now empty, clear it
-        qm set $vmid -description ""
-    fi
-    
-    log_info "Removed update nag from VM $vmid"
 }
 
 # Clean up state files for VMs that no longer exist
