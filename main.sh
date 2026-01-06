@@ -35,6 +35,9 @@ init_logger \
 
 check_script_dependencies
 
+# Initialize state directory
+init_state_dir
+
 ##################################################################################
 #                             Check for Updates                                 #
 ##################################################################################
@@ -45,6 +48,9 @@ if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then
     log_info "No Windows VMs found on this Proxmox host. Exiting."
     exit 0
 fi
+
+# Clean up state files for deleted VMs
+cleanup_stale_state_files "$windows_vms"
 
 virtio_info=$(fetch_latest_virtio_version)
 CurrentVirtIOVersion=$(echo "$virtio_info" | jq -r '.version')
@@ -61,23 +67,51 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
   need_virtio=false
   need_qemu_ga=false
 
-  # Only if an update is available set the flag to true
-  if [[ "$need_virtio" == true || "$need_qemu_ga" == true ]]; then
-    node=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].node')
-    
-    if [[ "$need_virtio" == true && "$need_qemu_ga" == true ]]; then
-      # Both Updates available
-      build_svg_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$CurrentVirtIORelease" "$CurrentQEMUGARelease"
-    elif [[ "$need_virtio" == true ]]; then
-      # Only VirtIO Update
-      build_svg_virtio_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$CurrentVirtIORelease"
-    else
-      # Only QEMU GA Update
-      build_svg_qemu_ga_update_nag "$vmid" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$CurrentQEMUGARelease"
-    fi
-    
-    update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
+  # Compare versions to determine if updates are needed
+  if [[ "$VirtIO_version" != "$CurrentVirtIOVersion" ]]; then
+    need_virtio=true
   fi
+  
+  if [[ "$QEMU_GA_version" != "$CurrentQEMUGAVersion" ]]; then
+    need_qemu_ga=true
+  fi
+
+  # Check if we should show/update/remove the nag
+  should_show_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$QEMU_GA_version" "$CurrentQEMUGAVersion"
+  nag_status=$?
+  
+  node=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].node')
+  
+  case $nag_status in
+    0)
+      # Show nag - updates available
+      if [[ "$need_virtio" == true && "$need_qemu_ga" == true ]]; then
+        # Both Updates available
+        build_svg_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$CurrentVirtIORelease" "$CurrentQEMUGARelease"
+        update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
+        save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "true"
+      elif [[ "$need_virtio" == true ]]; then
+        # Only VirtIO Update
+        build_svg_virtio_update_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" "$CurrentVirtIORelease"
+        update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
+        save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "true"
+      elif [[ "$need_qemu_ga" == true ]]; then
+        # Only QEMU GA Update
+        build_svg_qemu_ga_update_nag "$vmid" "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$CurrentQEMUGARelease"
+        update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
+        save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "true"
+      fi
+      ;;
+    1)
+      # No action needed - already up to date or nag already shown
+      save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "false"
+      ;;
+    2)
+      # Remove nag - VM is now up to date
+      remove_vm_nag "$node" "$vmid"
+      save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "false"
+      ;;
+  esac
 done
 
 log_info "Update check completed."
