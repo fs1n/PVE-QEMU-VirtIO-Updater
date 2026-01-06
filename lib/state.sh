@@ -1,4 +1,3 @@
-#!/bin/env bash
 # State management for VM update tracking
 
 STATE_DIR="${STATE_DIR:-$SCRIPT_DIR/.state}"
