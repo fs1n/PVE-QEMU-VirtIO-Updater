@@ -11,6 +11,7 @@ init_state_dir() {
         fi
         log_debug "Created state directory: $STATE_DIR"
     fi
+    return 0
 }
 
 # Get VM Generation ID (unique identifier that changes on clone/restore)
@@ -19,13 +20,18 @@ get_vm_genid() {
     local vmid=$2
     
     local vmgenid
-    # Prefer vmgenid from windows_vms; if missing/null, fall back to an identifier derived from vm_config (ctime+name) 
+    # Prefer vmgenid from windows_vms; if missing/null, fall back to an identifier derived from vm_config (ctime+name)
+    # windows_vms is expected to be a global variable containing the JSON of all Windows VMs -> Created in main.sh
     vmgenid=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].vmgenid // empty') 
     
     if [[ -z "$vmgenid" || "$vmgenid" == "null" ]]; then
-        # Fallback: if vmgenid not set, use ctime+name
-        local ctime=$(echo "$vm_config" | jq -r '.meta // empty' | grep -oP 'ctime=\K[0-9]+' || echo "0")
-        local vm_name=$(echo "$vm_config" | jq -r '.name // "unnamed"')
+        # Fallback: if vmgenid not set, fetch VM config and use ctime+name  
+        local vm_config  
+        vm_config=$(pvesh get "/nodes/${node}/qemu/${vmid}/config" --output-format json 2>/dev/null || echo '{}')  
+        local ctime  
+        ctime=$(echo "$vm_config" | jq -r '.meta // empty' | grep -oP 'ctime=\K[0-9]+' || echo "0")  
+        local vm_name  
+        vm_name=$(echo "$vm_config" | jq -r '.name // "unnamed"')  
         echo "fallback-${ctime}-${vm_name}"
         log_warn "VM $vmid has no vmgenid, using fallback identifier"
     else
@@ -95,7 +101,7 @@ load_vm_state() {
         value="${value%\"}"
         
         # Match known keys only (whitelist approach)
-        # Maby a source for issues but safer than eval and safer than source / dot sourcing an "untrusted" file
+        # Maybe a source for issues but safer than eval and safer than source / dot sourcing an "untrusted" file
         case "$key" in
             VMGENID) vmgenid="$value" ;;
             VIRTIO_VERSION) virtio_version="$value" ;;
@@ -190,11 +196,9 @@ cleanup_stale_state_files() {
         return 0
     fi
     
-    for state_file in "$STATE_DIR"/vm-*.state; do
-        if [[ ! -f "$state_file" ]]; then
-            continue
-        fi
-        
+    shopt -s nullglob
+
+    for state_file in "$STATE_DIR"/vm-*.state; do        
         # Extract VMID from filename
         local vmid=$(basename "$state_file" | sed -E 's/vm-([0-9]+)\.state/\1/')
         
@@ -204,4 +208,6 @@ cleanup_stale_state_files() {
             rm -f "$state_file"
         fi
     done
+
+    shopt -u nullglob
 }

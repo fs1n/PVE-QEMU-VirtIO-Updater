@@ -90,3 +90,44 @@ fetch_latest_qemu_ga_version() {
 
     echo "$latest_json"
 }
+
+maybe_show_update_nag() {
+  local node="$1" vmid="$2"
+  local need_virtio="$3" need_qemu_ga="$4"
+  local virtio_ver="$5" current_virtio="$6"
+  local qemu_ver="$7" current_qemu="$8"
+  local current_virtio_rel="$9" current_qemu_rel="${10}"
+  local vmgenid="${11}"
+
+  if [[ "$need_virtio" == true && "$need_qemu_ga" == true ]]; then
+    build_svg_update_nag \
+      "$vmid" \
+      "$virtio_ver" "$current_virtio" \
+      "$qemu_ver" "$current_qemu" \
+      "$current_virtio_rel" "$current_qemu_rel"
+
+    update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
+    save_vm_state "$vmid" "$virtio_ver" "$qemu_ver" "true" "$vmgenid"
+
+  elif [[ "$need_virtio" == true ]]; then
+    build_svg_virtio_update_nag \
+      "$vmid" \
+      "$virtio_ver" "$current_virtio" "$current_virtio_rel"
+
+    update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
+    save_vm_state "$vmid" "$virtio_ver" "$qemu_ver" "true" "$vmgenid"
+
+  elif [[ "$need_qemu_ga" == true ]]; then
+    build_svg_qemu_ga_update_nag \
+      "$vmid" \
+      "$qemu_ver" "$current_qemu" "$current_qemu_rel"
+
+    update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
+    save_vm_state "$vmid" "$virtio_ver" "$qemu_ver" "true" "$vmgenid"
+
+  else
+    # Defensive: nag_status=0 but no updates are needed
+    log_warn "nag_status=0 but neither VirtIO nor QEMU GA update is needed for VM $vmid; saving state without nag."
+    save_vm_state "$vmid" "$virtio_ver" "$qemu_ver" "false" "$vmgenid"
+  fi
+}
