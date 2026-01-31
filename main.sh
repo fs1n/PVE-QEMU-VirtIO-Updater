@@ -111,8 +111,8 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
         "$vmgenid"
       ;;
     1)
-      # Nag muted: never show nag, just persist state
-      save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "false" "$vmgenid"
+      # No-op: do not modify nag state or artifacts; leave existing nag state as-is
+      :
       ;;
     2)
       # Nag cleared: remove any nag artifacts and persist state
