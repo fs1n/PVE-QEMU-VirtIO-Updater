@@ -165,7 +165,14 @@ function load_vm_state() {
     # Export with validation
     export STORED_VMGENID="$vmgenid"
     export STORED_VIRTIO_VERSION="$virtio_version"
-  @function should_show_nag
+    export STORED_QEMU_GA_VERSION="$qemu_ga_version"
+    export STORED_NAG_ACTIVE="$nag_active"
+    export STORED_LAST_CHECKED="$last_checked"
+    
+    return 0
+}
+
+# @function should_show_nag
 # @description Determine whether update notification should be displayed based on VM state and version changes
 # @args vmid (string): Proxmox VM ID
 #       current_virtio (string): Currently installed VirtIO version
@@ -182,14 +189,7 @@ function load_vm_state() {
 #     2) remove_nag ;;
 #   esac
 # Check if nag should be displayed for this VM based on current and stored state
-function     export STORED_NAG_ACTIVE="$nag_active"
-    export STORED_LAST_CHECKED="$last_checked"
-    
-    return 0
-}
-
-# Check if nag should be displayed for this VM based on current and stored state
-should_show_nag() {
+function should_show_nag() {
     local vmid=$1
     local current_virtio=$2
     local latest_virtio=$3
