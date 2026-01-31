@@ -65,7 +65,7 @@ function get_vm_genid() {
         local vm_name  
         vm_name=$(echo "$vm_config" | jq -r '.name // "unnamed"')  
         echo "fallback-${ctime}-${vm_name}"
-        log_warn "VM $vmid has no vmgenid, using fallback identifier"
+        log_warn "VM $vmid has no vmgenid, using fallback identifier" >&2
     else
         echo "$vmgenid"
     fi
