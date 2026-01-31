@@ -180,13 +180,14 @@ function load_vm_state() {
 #       current_qemu_ga (string): Currently installed QEMU GA version
 #       latest_qemu_ga (string): Latest available QEMU GA version
 #       current_vmgenid (string): Current VM generation ID
-# @returns 0=show nag, 1=nag muted, 2=remove nag (VM up to date)
+# @returns 0=show/update nag, 1=no action, 2=remove nag (VM up to date), 3=nag muted
 # @example
 #   should_show_nag 100 "0.1.283" "0.1.285" "9.0.0" "9.1.0" "$vmgenid"
 #   case $? in
-#     0) show_nag ;;
-#     1) skip ;;
-#     2) remove_nag ;;
+#     0) show_or_update_nag ;;   # create or refresh nag for this VM
+#     1) : ;;                    # no action needed (nag state already correct / no nag required)
+#     2) remove_nag ;;           # VM is up to date, remove any existing nag
+#     3) nag_muted ;;            # nag explicitly muted for this VM
 #   esac
 # Check if nag should be displayed for this VM based on current and stored state
 function should_show_nag() {
