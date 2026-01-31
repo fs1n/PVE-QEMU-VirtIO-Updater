@@ -22,7 +22,7 @@
 # @example
 #   check_script_dependencies
 function check_script_dependencies() {
-    local dependencies=( "curl" "jq")
+    local dependencies=( "curl" "jq" "pvesh" "qm" "grep" "sed" "awk" "sort")
     for dep in "${dependencies[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             log_fatal "Error: $dep is not installed."
