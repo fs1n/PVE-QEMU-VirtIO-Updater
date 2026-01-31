@@ -26,7 +26,9 @@
 #   echo "$windows_vms" | jq '.'
 function get_windows_vms() {
     # Initialize an empty JSON object
-    json_items=""
+    local json_items=""
+    # Local variables to avoid leaking state outside this function
+    local nodes node vms vmid vm_config os_type vm_name status vmgenid vmgenid_json vm_obj json_output
 
     # List all nodes in the cluster
     nodes=$(pvesh get /nodes --output-format json | jq -r '.[].node')
