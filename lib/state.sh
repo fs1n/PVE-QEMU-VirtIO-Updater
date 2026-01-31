@@ -244,10 +244,11 @@ function should_show_nag() {
         return 0  # Show nag
     fi
     
-    # Same versions as before and nag already shown
+    # Same installed versions as before and nag already shown, but VM is still not up to date.
+    # Return 0 so the nag can be refreshed (e.g., if latest_* changed).
     if [[ "$STORED_NAG_ACTIVE" == "true" ]]; then
-        log_debug "VM $vmid nag already active, no action needed"
-        return 1  # Nag already shown, don't duplicate
+        log_debug "VM $vmid nag already active, refreshing nag state"
+        return 0  # Nag already shown; allow caller to refresh/update it
     fi
     
     # Default: show nag if updates available
