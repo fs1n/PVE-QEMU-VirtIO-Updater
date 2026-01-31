@@ -1,3 +1,29 @@
+#!/usr/bin/env bash
+#
+# Module: pve-interact.sh (PVE-QEMU-VirtIO-Updater)
+# Description: Proxmox VE API wrapper functions for VM discovery, version querying, and description updates
+# Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
+# Date: 2025-01-31
+#
+# Dependencies: pvesh, qm, jq, grep
+# Environment: N/A (functions exported for use by main.sh)
+# Usage: source lib/pve-interact.sh
+#
+# Functions:
+#   - get_windows_vms: Query all Windows VMs across Proxmox cluster
+#   - get_windows_virtio_version: Query VirtIO driver version inside Windows VM via QEMU Guest Agent
+#   - get_windows_QEMU_GA_version: Query QEMU Guest Agent version inside Windows VM
+#   - update_vm_description_with_update_nag: Add SVG update banner to VM description
+#   - remove_vm_nag: Remove update nag banner from VM description
+#   - get_vm_creation_date: Extract VM creation date from Proxmox metadata
+
+# @function get_windows_vms
+# @description Discovers all Windows VMs running on the Proxmox cluster and returns their metadata as JSON
+# @args None
+# @returns JSON object with VM IDs as keys; exits 0 on success (even if no VMs found)
+# @example
+#   windows_vms=$(get_windows_vms)
+#   echo "$windows_vms" | jq '.'
 function get_windows_vms() {
     # Initialize an empty JSON object
     json_items=""
@@ -61,6 +87,12 @@ function get_windows_vms() {
     echo "$json_output"
 }
 
+# @function get_windows_virtio_version
+# @description Query VirtIO driver version installed in a Windows VM via QEMU Guest Agent
+# @args vmid (string): Proxmox VM ID
+# @returns String containing version (e.g., "0.1.283"), empty string if not found or error
+# @example
+#   virtio_ver=$(get_windows_virtio_version 100)
 function get_windows_virtio_version() {
     local vmid=$1
     # Use guest-agent to get the VirtIO driver version inside the Windows VM
@@ -68,6 +100,12 @@ function get_windows_virtio_version() {
     echo "$version"
 }
 
+# @function get_windows_QEMU_GA_version
+# @description Query QEMU Guest Agent version installed in a Windows VM
+# @args vmid (string): Proxmox VM ID
+# @returns String containing version (e.g., "9.1.0"), empty string if not found or error
+# @example
+#   qemu_ver=$(get_windows_QEMU_GA_version 100)
 function get_windows_QEMU_GA_version() {
     local vmid=$1
     # Use guest-agent to get the QEMU Guest Agent driver version inside the Windows VM
@@ -75,6 +113,15 @@ function get_windows_QEMU_GA_version() {
     echo "$version"
 }
 
+# @function update_vm_description_with_update_nag
+# @description Adds SVG update banner to Proxmox VM description, preserving existing content
+# @args node (string): Proxmox node name
+#       vmid (string): Proxmox VM ID
+#       need_virtio (bool): true if VirtIO update is available
+#       need_qemu_ga (bool): true if QEMU GA update is available
+# @returns 0 on success, 1 on error; modifies VM description via qm set
+# @example
+#   update_vm_description_with_update_nag "$node" 100 true false
 function update_vm_description_with_update_nag() {
     local node=$1
     local vmid=$2
@@ -108,8 +155,14 @@ function update_vm_description_with_update_nag() {
     log_info "Updated description for VM $vmid with VirtIO update nag."
 }
 
-# Remove update nag from VM description
-remove_vm_nag() {
+# @function remove_vm_nag
+# @description Removes the SVG update banner from VM description, preserving other content
+# @args node (string): Proxmox node name
+#       vmid (string): Proxmox VM ID
+# @returns 0 on success; modifies VM description via qm set
+# @example
+#   remove_vm_nag "$node" 100
+function remove_vm_nag() {
     local node=$1
     local vmid=$2
     
@@ -139,7 +192,14 @@ remove_vm_nag() {
     log_info "Removed update nag from VM $vmid"
 }
 
-get_vm_creation_date() {
+# @function get_vm_creation_date
+# @description Extract VM creation date/time from Proxmox metadata
+# @args node (string): Proxmox node name
+#       vmid (string): Proxmox VM ID
+# @returns Creation date in format "YYYY-MM-DD HH:MM:SS", or "unknown" if not available
+# @example
+#   created=$(get_vm_creation_date "$node" 100)
+function get_vm_creation_date() {
     local node=$1
     local vmid=$2
     

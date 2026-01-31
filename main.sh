@@ -1,5 +1,20 @@
-#!/bin/env bash
-# Proxmox VE VirtIO Updater Script on Host
+#!/usr/bin/env bash
+#
+# Module: main.sh (PVE-QEMU-VirtIO-Updater)
+# Description: Main orchestrator for checking and managing VirtIO and QEMU Guest Agent updates on Proxmox VE Windows VMs
+# Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
+# Date: 2025-01-31
+#
+# Dependencies: jq, curl, pvesh, qm, sed, awk, grep
+# Environment: LOG_DIR, LOG_LEVEL, LOG_FORMAT, STATE_DIR, SVG_IMAGE_TEMPLATE
+# Usage: ./main.sh (typically run via cron or systemd timer)
+#
+# Description:
+#   This script serves as the main entry point for the PVE-QEMU-VirtIO-Updater.
+#   It orchestrates the complete workflow: initialization, dependency checking,
+#   fetching latest versions from Fedora People Archive, checking running Windows VMs,
+#   comparing versions, managing update notifications via SVG nags in Proxmox UI,
+#   and persisting VM state for tracking updates across runs.
 
 set -euo pipefail
 

@@ -1,3 +1,26 @@
+#!/usr/bin/env bash
+#
+# Module: default.sh (PVE-QEMU-VirtIO-Updater)
+# Description: Core functions for version fetching, dependency checking, and update notification logic
+# Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
+# Date: 2025-01-31
+#
+# Dependencies: curl, jq, sed, awk
+# Environment: N/A (functions exported for use by main.sh)
+# Usage: source lib/default.sh
+#
+# Functions:
+#   - check_script_dependencies: Verify required tools are installed
+#   - fetch_latest_virtio_version: Fetch latest VirtIO driver version from Fedora Archive
+#   - fetch_latest_qemu_ga_version: Fetch latest QEMU Guest Agent version from Fedora Archive
+#   - maybe_show_update_nag: Determine and display update notification if needed
+
+# @function check_script_dependencies
+# @description Validates that all required external tools are installed and available in PATH
+# @args None
+# @returns 0 if all dependencies found, 1 if any missing; logs result
+# @example
+#   check_script_dependencies
 function check_script_dependencies() {
     local dependencies=( "curl" "jq")
     for dep in "${dependencies[@]}"; do
@@ -10,6 +33,13 @@ function check_script_dependencies() {
     return 0
 }
 
+# @function fetch_latest_virtio_version
+# @description Fetches the latest available VirtIO driver version from Fedora People Archive
+# @args None
+# @returns JSON object with keys: version (e.g., "0.1.285"), release (date string, e.g., "2025-01-15")
+# @example
+#   version_json=$(fetch_latest_virtio_version)
+#   latest_ver=$(echo "$version_json" | jq -r '.version')
 fetch_latest_virtio_version() {
     local FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/"
 
@@ -52,6 +82,13 @@ fetch_latest_virtio_version() {
     echo "$latest_json"
 }
 
+# @function fetch_latest_qemu_ga_version
+# @description Fetches the latest available QEMU Guest Agent version from Fedora People Archive
+# @args None
+# @returns JSON object with keys: version (e.g., "9.1.0"), release (date string, e.g., "2025-01-20")
+# @example
+#   qemu_json=$(fetch_latest_qemu_ga_version)
+#   latest_qemu=$(echo "$qemu_json" | jq -r '.version')
 fetch_latest_qemu_ga_version() {
     local FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/"
 
@@ -89,45 +126,4 @@ fetch_latest_qemu_ga_version() {
     fi
 
     echo "$latest_json"
-}
-
-maybe_show_update_nag() {
-  local node="$1" vmid="$2"
-  local need_virtio="$3" need_qemu_ga="$4"
-  local virtio_ver="$5" current_virtio="$6"
-  local qemu_ver="$7" current_qemu="$8"
-  local current_virtio_rel="$9" current_qemu_rel="${10}"
-  local vmgenid="${11}"
-
-  if [[ "$need_virtio" == true && "$need_qemu_ga" == true ]]; then
-    build_svg_update_nag \
-      "$vmid" \
-      "$virtio_ver" "$current_virtio" \
-      "$qemu_ver" "$current_qemu" \
-      "$current_virtio_rel" "$current_qemu_rel"
-
-    update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
-    save_vm_state "$vmid" "$virtio_ver" "$qemu_ver" "true" "$vmgenid"
-
-  elif [[ "$need_virtio" == true ]]; then
-    build_svg_virtio_update_nag \
-      "$vmid" \
-      "$virtio_ver" "$current_virtio" "$current_virtio_rel"
-
-    update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
-    save_vm_state "$vmid" "$virtio_ver" "$qemu_ver" "true" "$vmgenid"
-
-  elif [[ "$need_qemu_ga" == true ]]; then
-    build_svg_qemu_ga_update_nag \
-      "$vmid" \
-      "$qemu_ver" "$current_qemu" "$current_qemu_rel"
-
-    update_vm_description_with_update_nag "$node" "$vmid" "$need_virtio" "$need_qemu_ga"
-    save_vm_state "$vmid" "$virtio_ver" "$qemu_ver" "true" "$vmgenid"
-
-  else
-    # Defensive: nag_status=0 but no updates are needed
-    log_warn "nag_status=0 but neither VirtIO nor QEMU GA update is needed for VM $vmid; saving state without nag."
-    save_vm_state "$vmid" "$virtio_ver" "$qemu_ver" "false" "$vmgenid"
-  fi
 }

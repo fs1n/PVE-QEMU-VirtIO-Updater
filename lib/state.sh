@@ -1,9 +1,34 @@
+#!/usr/bin/env bash
+#
+# Module: state.sh (PVE-QEMU-VirtIO-Updater)
+# Description: VM state management for tracking update status, version history, and VM identity across runs
+# Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
+# Date: 2025-01-31
+#
+# Dependencies: grep, sed, jq
+# Environment: STATE_DIR, SCRIPT_DIR
+# Usage: source lib/state.sh; init_state_dir; save_vm_state vmid version1 version2 nag_shown vmgenid
+#
+# Functions:
+#   - init_state_dir: Create state directory if needed
+#   - get_vm_genid: Retrieve or derive unique VM generation ID for clone detection
+#   - save_vm_state: Persist VM update state to file
+#   - load_vm_state: Load VM state from file and export as environment variables
+#   - should_show_nag: Determine if update notification should be displayed
+#   - cleanup_stale_state_files: Remove state files for VMs that no longer exist
+
 # State management for VM update tracking
 
 STATE_DIR="${STATE_DIR:-$SCRIPT_DIR/.state}"
 
+# @function init_state_dir
+# @description Creates the state directory if it does not exist; called once at startup
+# @args None
+# @returns 0 on success, 1 if directory creation failed
+# @example
+#   init_state_dir
 # Ensure state directory exists (called once at startup in main.sh)
-init_state_dir() {
+function init_state_dir() {
     if [[ ! -d "$STATE_DIR" ]]; then
         if ! mkdir -p "$STATE_DIR"; then  
             log_error "Failed to create state directory: $STATE_DIR"  
@@ -14,8 +39,15 @@ init_state_dir() {
     return 0
 }
 
+# @function get_vm_genid
+# @description Retrieve VM generation ID for clone detection; falls back to ctime+name if vmgenid not set
+# @args node (string): Proxmox node name
+#       vmid (string): Proxmox VM ID
+# @returns VM generation ID (UUID or fallback string)
+# @example
+#   vmgenid=$(get_vm_genid "$node" 100)
 # Get VM Generation ID (unique identifier that changes on clone/restore)
-get_vm_genid() {
+function get_vm_genid() {
     local node=$1
     local vmid=$2
     
@@ -39,8 +71,18 @@ get_vm_genid() {
     fi
 }
 
+# @function save_vm_state
+# @description Persist current VM version and nag state to a state file for future comparisons
+# @args vmid (string): Proxmox VM ID
+#       virtio_ver (string): Current VirtIO version
+#       qemu_ga_ver (string): Current QEMU GA version
+#       nag_shown (bool): Whether nag is currently active
+#       vmgenid (string): VM generation ID
+# @returns 0 on success, 1 if file write failed
+# @example
+#   save_vm_state 100 "0.1.283" "9.0.0" "true" "$vmgenid"
 # Save current VM state with identity tracking
-save_vm_state() {
+function save_vm_state() {
     local vmid=$1
     local virtio_ver=$2
     local qemu_ga_ver=$3
@@ -67,9 +109,16 @@ EOF
     log_debug "Saved state for VM $vmid to '$state_file'"
 }
 
+# @function load_vm_state
+# @description Load VM state from file and export as environment variables (STORED_VMGENID, STORED_VIRTIO_VERSION, etc.)
+# @args vmid (string): Proxmox VM ID
+# @returns 0 on success (state found), 1 if state file not found; exports STORED_* variables
+# @example
+#   load_vm_state 100
+#   echo "$STORED_VIRTIO_VERSION"
 # Load VM state from file using Line by Line parsing
 # Idea based on https://stackoverflow.com/questions/1521462/looping-through-the-content-of-a-file-in-bash
-load_vm_state() {
+function load_vm_state() {
     local vmid=$1
     local state_file="$STATE_DIR/vm-${vmid}.state"
     
@@ -116,8 +165,24 @@ load_vm_state() {
     # Export with validation
     export STORED_VMGENID="$vmgenid"
     export STORED_VIRTIO_VERSION="$virtio_version"
-    export STORED_QEMU_GA_VERSION="$qemu_ga_version"
-    export STORED_NAG_ACTIVE="$nag_active"
+  @function should_show_nag
+# @description Determine whether update notification should be displayed based on VM state and version changes
+# @args vmid (string): Proxmox VM ID
+#       current_virtio (string): Currently installed VirtIO version
+#       latest_virtio (string): Latest available VirtIO version
+#       current_qemu_ga (string): Currently installed QEMU GA version
+#       latest_qemu_ga (string): Latest available QEMU GA version
+#       current_vmgenid (string): Current VM generation ID
+# @returns 0=show nag, 1=nag muted, 2=remove nag (VM up to date)
+# @example
+#   should_show_nag 100 "0.1.283" "0.1.285" "9.0.0" "9.1.0" "$vmgenid"
+#   case $? in
+#     0) show_nag ;;
+#     1) skip ;;
+#     2) remove_nag ;;
+#   esac
+# Check if nag should be displayed for this VM based on current and stored state
+function     export STORED_NAG_ACTIVE="$nag_active"
     export STORED_LAST_CHECKED="$last_checked"
     
     return 0
@@ -172,8 +237,14 @@ should_show_nag() {
     fi
     
     # Check if versions changed since last check (new update available)
-    if [[ "$STORED_VIRTIO_VERSION" != "$current_virtio" ]] || \
-       [[ "$STORED_QEMU_GA_VERSION" != "$current_qemu_ga" ]]; then
+  @function cleanup_stale_state_files
+# @description Remove state files for VMs that no longer exist in the Proxmox cluster
+# @args active_vmids (string): JSON object with VM IDs as keys
+# @returns 0 on success; removes matching .state files from STATE_DIR
+# @example
+#   cleanup_stale_state_files "$windows_vms"
+# Clean up state files for VMs that no longer exist
+function        [[ "$STORED_QEMU_GA_VERSION" != "$current_qemu_ga" ]]; then
         log_debug "VM $vmid versions changed since last check, showing nag"
         return 0  # Show nag
     fi
