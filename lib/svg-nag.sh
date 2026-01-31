@@ -18,6 +18,11 @@ SVG_IMAGE_PATH="/usr/share/pve-manager/images/"
 SVG_IMAGE_TEMPLATE="${SCRIPT_DIR}/templates/svg/update-nag-template.svg"
 SVG_IMAGE_TEMPLATE_BOTH="${SCRIPT_DIR}/templates/svg/update-nag-both-template.svg"
 
+# Escape untrusted strings for sed replacement (/, \, &)
+escape_sed_replacement() {
+  printf '%s' "$1" | sed -e 's/[\/&\\]/\\&/g'
+}
+
 # @function build_svg_update_nag
 # @description Generates SVG banner showing both VirtIO and QEMU GA update availability
 # @args vmid (string): Proxmox VM ID
@@ -32,12 +37,18 @@ SVG_IMAGE_TEMPLATE_BOTH="${SCRIPT_DIR}/templates/svg/update-nag-both-template.sv
 #   build_svg_update_nag 100 0.1.283 0.1.285 9.0.0 9.1.0 2025-01-15 2025-01-20
 function build_svg_update_nag() {
     local vmid=$1
-    local vmVirtIOCurrentVersion=$2
-    local vmVirtIOLatestVersion=$3
-    local vmQEMUGACurrentVersion=$4
-    local vmQEMUGALatestVersion=$5
-    local virtIOreleaseDate=$6
-    local qemuGAReleaseDate=$7
+  local vmVirtIOCurrentVersion
+  vmVirtIOCurrentVersion="$(escape_sed_replacement "$2")"
+  local vmVirtIOLatestVersion
+  vmVirtIOLatestVersion="$(escape_sed_replacement "$3")"
+  local vmQEMUGACurrentVersion
+  vmQEMUGACurrentVersion="$(escape_sed_replacement "$4")"
+  local vmQEMUGALatestVersion
+  vmQEMUGALatestVersion="$(escape_sed_replacement "$5")"
+  local virtIOreleaseDate
+  virtIOreleaseDate="$(escape_sed_replacement "$6")"
+  local qemuGAReleaseDate
+  qemuGAReleaseDate="$(escape_sed_replacement "$7")"
 
     cp "${SVG_IMAGE_TEMPLATE_BOTH}" "${SVG_IMAGE_PATH}/update-${vmid}.svg"
     
@@ -63,9 +74,12 @@ function build_svg_update_nag() {
 #   build_svg_virtio_update_nag 100 0.1.283 0.1.285 2025-01-15
 function build_svg_virtio_update_nag() {
     local vmid=$1
-    local vmVirtIOCurrentVersion=$2
-    local vmVirtIOLatestVersion=$3
-    local releaseDate=$4
+  local vmVirtIOCurrentVersion
+  vmVirtIOCurrentVersion="$(escape_sed_replacement "$2")"
+  local vmVirtIOLatestVersion
+  vmVirtIOLatestVersion="$(escape_sed_replacement "$3")"
+  local releaseDate
+  releaseDate="$(escape_sed_replacement "$4")"
 
     cp "${SVG_IMAGE_TEMPLATE}" "${SVG_IMAGE_PATH}/update-${vmid}.svg"
     sed -e "s/{{ title }}/VirtIO Update Available/g" \
@@ -87,9 +101,12 @@ function build_svg_virtio_update_nag() {
 #   build_svg_qemu_ga_update_nag 100 9.0.0 9.1.0 2025-01-20
 function build_svg_qemu_ga_update_nag() {
     local vmid=$1
-    local vmQEMUGACurrentVersion=$2
-    local vmQEMUGALatestVersion=$3
-    local releaseDate=$4
+  local vmQEMUGACurrentVersion
+  vmQEMUGACurrentVersion="$(escape_sed_replacement "$2")"
+  local vmQEMUGALatestVersion
+  vmQEMUGALatestVersion="$(escape_sed_replacement "$3")"
+  local releaseDate
+  releaseDate="$(escape_sed_replacement "$4")"
 
     cp "${SVG_IMAGE_TEMPLATE}" "${SVG_IMAGE_PATH}/update-${vmid}.svg"
     sed -e "s/{{ title }}/QEMU Guest Agent Update Available/g" \
