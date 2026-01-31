@@ -22,7 +22,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DOCS_DIR="${SCRIPT_DIR}/docs"
-VERBOSE="${1:---verbose}" # --verbose or empty
+VERBOSE="${1:-}" # --verbose or empty
 
 # Logging helpers
 log_info() { echo "[INFO] $*"; }
