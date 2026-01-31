@@ -237,14 +237,8 @@ function should_show_nag() {
     fi
     
     # Check if versions changed since last check (new update available)
-  @function cleanup_stale_state_files
-# @description Remove state files for VMs that no longer exist in the Proxmox cluster
-# @args active_vmids (string): JSON object with VM IDs as keys
-# @returns 0 on success; removes matching .state files from STATE_DIR
-# @example
-#   cleanup_stale_state_files "$windows_vms"
-# Clean up state files for VMs that no longer exist
-function        [[ "$STORED_QEMU_GA_VERSION" != "$current_qemu_ga" ]]; then
+    if [[ "$STORED_VIRTIO_VERSION" != "$current_virtio" ]] || \
+       [[ "$STORED_QEMU_GA_VERSION" != "$current_qemu_ga" ]]; then
         log_debug "VM $vmid versions changed since last check, showing nag"
         return 0  # Show nag
     fi
@@ -259,8 +253,14 @@ function        [[ "$STORED_QEMU_GA_VERSION" != "$current_qemu_ga" ]]; then
     return 0
 }
 
+# @function cleanup_stale_state_files
+# @description Remove state files for VMs that no longer exist in the Proxmox cluster
+# @args active_vmids (string): JSON object with VM IDs as keys
+# @returns 0 on success; removes matching .state files from STATE_DIR
+# @example
+#   cleanup_stale_state_files "$windows_vms"
 # Clean up state files for VMs that no longer exist
-cleanup_stale_state_files() {
+function cleanup_stale_state_files() {
     local active_vmids=$1  # JSON object with VM IDs as keys
     
     if [[ ! -d "$STATE_DIR" ]]; then
