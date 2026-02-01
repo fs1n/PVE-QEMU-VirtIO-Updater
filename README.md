@@ -10,10 +10,6 @@ Keep your VirtIO drivers and QEMU Guest Agent up to date on Proxmox VE. Inspired
 
 I got tired of manually checking if my Windows VMs on Proxmox had outdated VirtIO drivers. VMware's vCenter does this elegantly with a nice warning in the VM Overview, so I decided to build something similar for ProxmoxVE.
 
-Screenshot:
-
-<img width="1916" height="611" alt="image" src="https://github.com/user-attachments/assets/2fcb90b8-f3b9-4fd7-ae6b-4df7f58a34fa" />
-
 ## Current Status
 
 ⚠️ **Work in Progress** - I'm building this as I have time.

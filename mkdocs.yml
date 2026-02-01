@@ -1,0 +1,63 @@
+site_name: PVE-QEMU-VirtIO-Updater Documentation
+site_description: Proxmox VE Windows VM VirtIO and QEMU Guest Agent Update Manager
+repo_url: https://github.com/fs1n/PVE-QEMU-VirtIO-Updater
+repo_name: fs1n/PVE-QEMU-VirtIO-Updater
+docs_dir: docs
+site_dir: site
+
+# Theme
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: blue
+    accent: cyan
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.annotate
+    - content.tabs.link
+
+# Plugins
+plugins:
+  - search
+  - table-reader
+
+# Extensions for Markdown
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      use_pygments: true
+  - pymdownx.inlinehilite
+  - pymdownx.emoji:
+      emoji_index: !!python/name:pymdownx.emoji.twemoji
+      emoji_generator: !!python/name:pymdownx.emoji.to_svg
+  - tables
+  - toc:
+      permalink: true
+      title: Contents
+  - abbr
+  - attr_list
+  - def_list
+  - md_in_html
+
+# Navigation
+nav:
+  - Home: index.md
+  - Architecture: 01-overview.md
+  - Installation: 02-installation.md
+  - Configuration: 03-configuration.md
+  - Operation: 04-operation.md
+  - Troubleshooting: 05-troubleshooting.md
+
+# Copy right / Footer
+copyright: Copyright &copy; 2025 Frederik S. (fs1n)

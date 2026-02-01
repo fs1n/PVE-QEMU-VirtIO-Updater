@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 #
-# https://gist.github.com/GingerGraham/99af97eed2cd89cd047a2088947a5405
+# Module: logger.sh (PVE-QEMU-VirtIO-Updater)
+# Description: Reusable logging module with syslog-compatible levels, file/console/journal output, and color support
+# Author: GingerGraham (https://gist.github.com/GingerGraham/99af97eed2cd89cd047a2088947a5405), adapted by PVE-QEMU-VirtIO-Updater
+# Date: 2025-01-31
+#
+# Dependencies: date, tput (optional, for color detection), systemd-journalctl (optional)
+# Environment: NO_COLOR, CLICOLOR, CLICOLOR_FORCE, TERM, LOG_LEVEL, LOG_FORMAT
+# Usage: source lib/logger.sh; init_logger [options]; log_info "message"
 #
 # logging.sh - Reusable Bash Logging Module
 # 

@@ -2,3 +2,5 @@
 *.log
 db.json
 manage.sh
+.state/
+site/
