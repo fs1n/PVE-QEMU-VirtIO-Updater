@@ -375,17 +375,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#file-structure" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        File Structure
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#support-contribution" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -651,17 +640,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#file-structure" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        File Structure
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#support-contribution" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -693,7 +671,6 @@
 
 
 <h1 id="pve-qemu-virtio-updater-documentation">PVE-QEMU-VirtIO-Updater Documentation<a class="headerlink" href="#pve-qemu-virtio-updater-documentation" title="Permanent link">&para;</a></h1>
-<p>Welcome to the comprehensive documentation for the <strong>Proxmox VE QEMU VirtIO Driver Updater</strong>.</p>
 <p>This tool automatically monitors Windows VMs running on Proxmox VE for outdated VirtIO drivers and QEMU Guest Agent software, creating visual update notifications in the Proxmox UI.</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <ol>
@@ -791,25 +768,6 @@
 <li>Scheduling (via cron or systemd timer)</li>
 </ul>
 <p>See <a href="03-configuration/">Configuration Guide</a> for all options and examples.</p>
-<h2 id="file-structure">File Structure<a class="headerlink" href="#file-structure" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>PVE-QEMU-VirtIO-Updater/
-├── main.sh              # Entry point
-├── update.sh            # Self-update mechanism
-├── generate-docs.sh     # Documentation generator
-├── lib/
-│   ├── default.sh      # Core logic
-│   ├── pve-interact.sh # Proxmox API
-│   ├── state.sh        # State tracking
-│   ├── svg-nag.sh      # SVG rendering
-│   ├── logger.sh       # Logging
-│   └── notification.sh # Notifications
-├── templates/
-│   ├── svg/            # SVG templates for nags
-│   └── html/           # Email templates
-├── docs/               # Documentation (auto-generated)
-├── logs/               # Log files (runtime)
-└── .state/             # VM state files (runtime)
-</code></pre></div>
 <h2 id="support-contribution">Support &amp; Contribution<a class="headerlink" href="#support-contribution" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Documentation</strong>: First, make the necessary changes in the scripts. If the content is static, then make the changes directly in the generator script. Then, run the command <code>./generate-docs.sh</code> to regenerate.</li>
@@ -818,7 +776,7 @@
 <li><strong>Repository</strong>: https://github.com/fs1n/PVE-QEMU-VirtIO-Updater</li>
 </ul>
 <hr />
-<p><strong>Last Updated:</strong> 2026-01-31<br />
+<p><strong>Last Updated:</strong> 2026-02-01<br />
 <strong>Version:</strong> 1.0<br />
 <strong>License:</strong> MIT LICENSE</p>
 
