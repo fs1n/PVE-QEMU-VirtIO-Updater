@@ -78,8 +78,16 @@ extract_functions() {
     local args=""
     local returns=""
     local example=""
-    
-    while IFS= read -r line; do
+    local pending_line=""
+
+    while :; do
+        local line=""
+        if [[ -n "$pending_line" ]]; then
+            line="$pending_line"
+            pending_line=""
+        else
+            IFS= read -r line || break
+        fi
         # Detect @function marker
         if [[ "$line" =~ @function\ ([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
             func_name="${BASH_REMATCH[1]}"
@@ -94,8 +102,13 @@ extract_functions() {
             elif [[ "$line" =~ @args\ (.*) ]]; then
                 args="${BASH_REMATCH[1]}"
                 # Capture multi-line args
-                while IFS= read -r next_line && [[ "$next_line" =~ ^[[:space:]]*# ]] && ! [[ "$next_line" =~ @[a-z] ]]; do
-                    args+=" $(echo "$next_line" | sed 's/^[[:space:]]*#[[:space:]]*//g')"
+                while IFS= read -r next_line; do
+                    if [[ "$next_line" =~ ^[[:space:]]*# ]] && ! [[ "$next_line" =~ @[a-z] ]]; then
+                        args+=" $(echo "$next_line" | sed 's/^[[:space:]]*#[[:space:]]*//g')"
+                    else
+                        pending_line="$next_line"
+                        break
+                    fi
                 done
             elif [[ "$line" =~ @returns\ (.*) ]]; then
                 returns="${BASH_REMATCH[1]}"

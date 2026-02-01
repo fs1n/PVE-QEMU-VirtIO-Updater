@@ -172,7 +172,7 @@ function remove_vm_nag() {
     local current_description=$(echo "$current_vm_config" | jq -r '.description // empty')
     
     # Check if nag exists in description
-    if [[ -z "$current_description" ]] || ! echo "$current_description" | grep -q "update-$vmid.svg"; then
+    if [[ -z "$current_description" ]] || ! echo "$current_description" | grep -Fq "update-$vmid.svg"; then
         log_debug "No update nag found for VM $vmid"
         return 0
     fi
