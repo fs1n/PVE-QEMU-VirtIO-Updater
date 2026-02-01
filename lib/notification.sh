@@ -29,50 +29,65 @@ function notification_init() {
 
 # @function notification_send
 # @description Routes update notifications to all enabled channels defined in NOTIFICATION_CHANNELS
-# @args None (uses NOTIFICATION_CHANNELS environment variable)
-# @returns 0 on successful dispatch to all channels
+# @args subject body
+# @returns 0 on successful dispatch to all channels (or if no channels are configured)
 # @example
-#   NOTIFICATION_CHANNELS="smtp,webhook" notification_send
+#   NOTIFICATION_CHANNELS="smtp,webhook" notification_send "Update completed" "All guests are now on the latest VirtIO drivers."
 function notification_send() {
-    IFS=',' read -ra CHANNELS <<< "$NOTIFICATION_CHANNELS"
+    local subject=${1-}
+    local body=${2-}
+
+    # If NOTIFICATION_CHANNELS is unset or empty, do nothing and succeed.
+    if [[ -z "${NOTIFICATION_CHANNELS-}" ]]; then
+        return 0
+    fi
+
+    local IFS=','
+    read -ra CHANNELS <<< "$NOTIFICATION_CHANNELS"
     for channel in "${CHANNELS[@]}"; do
         case "$channel" in
-            smtp) notification_email_SMTP ;;
-            msgraph) notification_email_MSGRAPH ;;
-            webhook) notification_webhook ;;
+            smtp) notification_email_SMTP "$subject" "$body" ;;
+            msgraph) notification_email_MSGRAPH "$subject" "$body" ;;
+            webhook) notification_webhook "$subject" "$body" ;;
         esac
     done
 }
 
 # @function notification_email_SMTP
 # @description Sends email notification via SMTP (requires SMTP_SERVER, FROM, TO configuration)
-# @args None (uses environment variables)
+# @args subject body
 # @returns 0 on success, 1 on failure
 # @example
-#   SMTP_SERVER="mail.example.com" notification_email_SMTP
+#   SMTP_SERVER="mail.example.com" notification_email_SMTP "Update completed" "All guests are now on the latest VirtIO drivers."
 function notification_email_SMTP() {
-    # Todo: Implement email notification logic here
+    local subject=${1-}
+    local body=${2-}
+    # Todo: Implement email notification logic here using "$subject" and "$body"
     :
 }
 
 # @function notification_email_MSGRAPH
 # @description Sends email notification via Microsoft Graph API (requires MSGRAPH_TOKEN, FROM, TO configuration)
-# @args None (uses environment variables)
+# @args subject body
 # @returns 0 on success, 1 on failure
 # @example
-#   MSGRAPH_TOKEN="Bearer ..." notification_email_MSGRAPH
+#   MSGRAPH_TOKEN="Bearer ..." notification_email_MSGRAPH "Update completed" "All guests are now on the latest VirtIO drivers."
 function notification_email_MSGRAPH() {
-    # Todo: Implement Microsoft Graph email notification logic here
+    local subject=${1-}
+    local body=${2-}
+    # Todo: Implement Microsoft Graph email notification logic here using "$subject" and "$body"
     :
 }
 
 # @function notification_webhook
 # @description Sends notification via HTTP POST to configured webhook endpoint (requires WEBHOOK_URL)
-# @args None (uses environment variables)
+# @args subject body
 # @returns 0 on success, 1 on failure
 # @example
-#   WEBHOOK_URL="https://hooks.example.com/notify" notification_webhook
+#   WEBHOOK_URL="https://hooks.example.com/notify" notification_webhook "Update completed" "All guests are now on the latest VirtIO drivers."
 function notification_webhook() {
-    # Todo: Implement webhook notification logic here
+    local subject=${1-}
+    local body=${2-}
+    # Todo: Implement webhook notification logic here using "$subject" and "$body"
     :
 }
