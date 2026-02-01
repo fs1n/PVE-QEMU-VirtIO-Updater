@@ -95,9 +95,12 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
     need_qemu_ga=true
   fi
 
-  should_show_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" \
-                  "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$vmgenid"
-  nag_status=$?
+  if should_show_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" \
+                     "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$vmgenid"; then
+    nag_status=0
+  else
+    nag_status=$?
+  fi
 
   case "$nag_status" in
     0)
