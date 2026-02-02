@@ -43,37 +43,47 @@ function check_script_dependencies() {
 fetch_latest_virtio_version() {
     local FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/"
 
-    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || \
+    # Use curl and capture status code
+    local archive_page
+    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || {
         log_error "Failed to fetch Fedora People Archive page"
+        return 1
+    }
 
-    http_code=$(echo "$archive_page" | tail -n1)
-    page_content=$(echo "$archive_page" | head -n-1)
+    local http_code=$(echo "$archive_page" | tail -n1)
+    # Use sed to remove the last line (the http code)
+    local page_content=$(echo "$archive_page" | sed '$d')
 
     if [ "$http_code" != "200" ]; then
         log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+        return 1
     fi
 
-    latest_json=$(echo "$page_content" |
-        awk '
-          /virtio-win-[0-9.]+-[0-9]+/ {
-              # e.g.: ... virtio-win-0.1.285-1/ ... 2025-09-15 17:26 ...
-              # capture only 0.1.285 (without the -1)
-              match($0, /virtio-win-([0-9.]+)-[0-9]+\//, m)
-              if (m[1] != "") {
-                  version = m[1]   # 0.1.285
-                  match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/, d)
-                  if (d[0] != "") {
-                      date = d[0]
-                      print version " " date
-                  }
-              }
-          }
-        ' |
+    # Refactored AWK to be compatible with mawk and gawk
+    latest_json=$(echo "$page_content" | awk '
+        /virtio-win-[0-9.]+-([0-9]+)\// {
+            # Find the version string
+            start = match($0, /virtio-win-[0-9.]+-([0-9]+)\//)
+            if (start > 0) {
+                # Extract full match like virtio-win-0.1.285-1/
+                full_match = substr($0, RSTART, RLENGTH)
+                # Strip prefix and suffix to get 0.1.285-1
+                gsub(/virtio-win-|\//, "", full_match)
+                # Split at hyphen to remove the release number (the -1)
+                split(full_match, parts, "-")
+                version = parts[1]
+
+                # Find the date
+                if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) {
+                    date = substr($0, RSTART, RLENGTH)
+                    print version " " date
+                }
+            }
+        }' |
         sort -V |
         tail -n1 |
         awk '{ver=$1; $1=""; sub(/^ /, "", $0); printf("{\"version\":\"%s\",\"release\":\"%s\"}\n", ver, $0)}'
     )
-
 
     if [ -z "$latest_json" ]; then
         log_error "Could not find any virtio-win directory versions"
@@ -92,30 +102,37 @@ fetch_latest_virtio_version() {
 fetch_latest_qemu_ga_version() {
     local FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/"
 
-    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || \
+    # Abruf der Seite und des HTTP-Statuscodes
+    local archive_page
+    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || {
         log_error "Failed to fetch Fedora People Archive page"
+    }
 
-    http_code=$(echo "$archive_page" | tail -n1)
-    page_content=$(echo "$archive_page" | head -n-1)
+    local http_code=$(echo "$archive_page" | tail -n1)
+    # Entferne die letzte Zeile (den Statuscode) sicher mit sed
+    local page_content=$(echo "$archive_page" | sed '$d')
 
     if [ "$http_code" != "200" ]; then
         log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
     fi
 
-    latest_json=$(echo "$page_content" |
-        awk '
-          /qemu-ga-win-[^"]+\// {
-          	  match($0, /qemu-ga-win-([0-9]+\.[0-9]+\.[0-9]+)/, m)
-	  		  if (m[1] != "") {
- 			      version = m[1]
-                  match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/, d)
-                  if (d[0] != "") {
-                      date = d[0]
-                      print version " " date
-                  }
-              }
-          }
-        ' |
+    # Extraktion der Version und des Datums
+    latest_json=$(echo "$page_content" | awk '
+        /qemu-ga-win-[^"]+\// {
+            # Suche nach dem Versions-String (z.B. qemu-ga-win-9.1.0)
+            if (match($0, /qemu-ga-win-[0-9]+\.[0-9]+\.[0-9]+/)) {
+                full_match = substr($0, RSTART, RLENGTH)
+                # Entferne den Präfix, um nur die Version zu behalten
+                sub(/qemu-ga-win-/, "", full_match)
+                version = full_match
+
+                # Suche nach dem Datum (YYYY-MM-DD)
+                if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) {
+                    date = substr($0, RSTART, RLENGTH)
+                    print version " " date
+                }
+            }
+        }' |
         sort -V |
         tail -n1 |
         awk '{ver=$1; $1=""; sub(/^ /, "", $0); printf("{\"version\":\"%s\",\"release\":\"%s\"}\n", ver, $0)}'
