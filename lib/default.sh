@@ -47,7 +47,6 @@ fetch_latest_virtio_version() {
     local archive_page
     archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || {
         log_error "Failed to fetch Fedora People Archive page"
-        return 1
     }
 
     local http_code=$(echo "$archive_page" | tail -n1)
@@ -56,7 +55,6 @@ fetch_latest_virtio_version() {
 
     if [ "$http_code" != "200" ]; then
         log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
-        return 1
     fi
 
     # Refactored AWK to be compatible with mawk and gawk
