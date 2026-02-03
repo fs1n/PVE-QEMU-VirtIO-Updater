@@ -1,0 +1,12 @@
+# Screenshot Placeholders
+
+This directory will contain screenshots of:
+- Update banner (single component) in Proxmox UI
+- Update banner (both components) in Proxmox UI
+- VM description area showing SVG nag
+- Example log output
+- State file structure
+
+Placeholder images referenced in README.md:
+- update-banner-single-placeholder.png
+- update-banner-both-placeholder.png
