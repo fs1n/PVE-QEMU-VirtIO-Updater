@@ -166,10 +166,8 @@ For detailed installation, configuration, and scheduling options, see the [Insta
 
 - [ ] **Notification Implementation**: Complete SMTP, webhook, and MS Graph notification channels
 - [ ] **Self-Update Mechanism**: Implement `update.sh` for script auto-updates
-- [ ] **Linux Guest Support**: Extend guest updater to support Linux VMs (apt/yum/dnf)
 - [ ] **Enhanced Clone Detection**: Improve vmgenid tracking and state validation
 - [ ] **Error Handling**: Better error recovery and logging granularity
-- [ ] **Multi-Language Support**: i18n for log messages and UI elements
 
 ## Documentation
 
@@ -186,9 +184,3 @@ Full documentation is available in the `docs/` directory:
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
----
-
-**Contributors**: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
-
-**Inspired by**: VMware vCenter's "VMware Tools update available" notification system
