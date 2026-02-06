@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
 
 # Source all functions in lib files
-for lib_file in "$LIB_DIR"/*.sh; do
+for lib_file in "$LIB_DIR"/*.func; do
   if [[ -f "$lib_file" ]]; then
     source "$lib_file"
   fi
