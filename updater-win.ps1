@@ -7,24 +7,50 @@
 #>
 
 if ($env:OS -ne "Windows_NT") {
-    Write-Host "Dieses Script läuft nur auf Windows!" -ForegroundColor Red
+    Write-Host "This script is only intended to run on Windows systems!" -ForegroundColor Red
     Write-Host "Aktuelles System: $($PSVersionTable.OS)" -ForegroundColor Yellow
     exit 1
 }
 
-# Region Variables
+# Check if run as administrator
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "This script must be run with administrator privileges!" -ForegroundColor Red
+    exit 1
+}
+
+if ($PSVersionTable.PSVersion.Major -le 5) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+}
+
+#Region Variables
 
 # Define Variables
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$FedoraPeopleArchiveRootURL = "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/"
+# FPA Is used as the alias for Fedora People Archive in the script
+$FPARootURL = "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads"
+$ArchiveVirtIOURL = "$FPARootURL/archive-virtio/"
+$ArchiveQemuGAURL = "$FPARootURL/archive-qemu-ga/"
 
+$UninstallRegistryPaths = @(
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+)
 
-# Initialize log file path
-$script:LogFilePath = "$PSScriptRoot\script_log_$(Get-Date -Format 'yyyy-MM-dd').log"
+$VirtIODisplayNamePattern = "*virtio*installer*"
+$VirtIOmsiFileName = "virtio-win-gt-x64.msi"
 
-# EndRegion
+$ScriptTempDirName = "Qemu-VirtIO-Update-Temp"
+$ScriptTempPath = Join-Path -Path $env:TEMP -ChildPath $ScriptTempDirName
+if (-not (Test-Path -Path $ScriptTempPath)) {
+    New-Item -Path $ScriptTempPath -ItemType Directory | Out-Null
+}
+$script:LogFilePath = Join-Path -Path $ScriptTempPath -ChildPath "log_$(Get-Date -Format 'yyyy-MM-dd').log"
 
-# Region Functions
+[xml]$drivers = pnputil /enum-drivers /format xml
+
+#EndRegion
+
+#Region Functions
 
 function Write-Log {
     <#
@@ -65,7 +91,7 @@ function Write-Log {
     # Ensure log file exists
     if (-not (Test-Path -Path $script:LogFilePath)) {
         New-Item -Path $script:LogFilePath -ItemType File -Force | Out-Null
-        Add-Content -Path $script:LogFilePath -Value "=== Log initialized on $(Get-Date -Format 'dd.MM.yyyy HH: mm:ss') ==="
+        Add-Content -Path $script:LogFilePath -Value "=== Log initialized on $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss') ==="
     }
     
     # Write to log file
@@ -79,96 +105,137 @@ function Write-Log {
     }
 }
 
-# EndRegion
+#EndRegion
 
-# Region Script
+#Region Script
 
-$confirm = Read-Host "Should the virtIO-Drivers be updated? (Y/N)"
+$confirm = Read-Host "Should the virtIO-Drivers and the QEMU Guest Agent be updated? (y/N)"
 if ($confirm -notmatch "^[Yy]") {
     Write-Host "Script Canceled." -ForegroundColor Yellow
     exit 0
 }
 
-$FedoraPeopleArchiveRootSite = Invoke-WebRequest -Uri $FedoraPeopleArchiveRootURL -UseBasicParsing
+# Test if VirtIO Drivers are installed and get the current version
+# Needed to then compare with latest version -> Override option to force reinstall will be added at some point. (ToDo)
+try {
+    $VirtIOCurrentVersion = Get-ItemProperty -Path $UninstallRegistryPaths -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -and $_.DisplayName -like $VirtIODisplayNamePattern } |
+        Select-Object -ExpandProperty DisplayVersion -First 1
 
-if ($FedoraPeopleArchiveRootSite.StatusCode -eq 200) {
-    Write-Log -Message "Successfully accessed Fedora People Archive at $FedoraPeopleArchiveRootURL" -Level "Info"
-} else {
-    Write-Log -Message "Failed to access Fedora People Archive at $FedoraPeopleArchiveRootURL. Status Code: $($FedoraPeopleArchiveRootSite.StatusCode)" -Level "Error"
-    exit 1
+    if ([string]::IsNullOrWhiteSpace($VirtIOCurrentVersion)) {
+        Write-Log -Message "VirtIO not installed (no matching registry entry found)." -Level "Warning"
+    } else {
+        Write-Log -Message "Detected VirtIO version: $VirtIOCurrentVersion" -Level "Info"
+    }
+}
+catch {
+    Write-Log -Message "Unable to retrieve VirtIO version: $_" -Level "Warning"
 }
 
-$directoryLinks = $FedoraPeopleArchiveRootSite.Links |
+# Test if QEMU Guest Agent is installed and get current version
+try {
+    $QemuGACurrentVersion = $null
+    $qemuPaths = @(
+        'C:\Program Files\Qemu-ga\qemu-ga.exe',
+        'C:\Program Files (x86)\Qemu-ga\qemu-ga.exe'
+    )
+
+    foreach ($path in $qemuPaths) {
+        if (Test-Path -Path $path) {
+            $QemuGACurrentVersion = (Get-Item -Path $path -ErrorAction Stop).VersionInfo.FileVersion
+            break
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($QemuGACurrentVersion)) {
+        Write-Log -Message "QEMU Guest Agent not installed (qemu-ga.exe not found)." -Level "Warning"
+    } else {
+        Write-Log -Message "Detected QEMU Guest Agent version: $QemuGACurrentVersion" -Level "Info"
+    }
+}
+catch {
+    Write-Log -Message "Unable to retrieve QEMU Guest Agent version: $_" -Level "Warning"
+}
+
+# Access the Fedora People Archive to find the latest virtio-win version
+
+$FPAVirtIORootSite = Invoke-WebRequest -Uri $ArchiveVirtIOURL
+if ($FPAVirtIORootSite.StatusCode -ne 200) {
+    Write-Log -Message "Failed to access Fedora People Archive at $ArchiveVirtIOURL. Status Code: $($FPAVirtIORootSite.StatusCode)" -Level "Error"
+    exit 1
+}
+Write-Log -Message "Successfully accessed Fedora People Archive at $ArchiveVirtIOURL" -Level "Info"
+
+$FPAVirtIOdirectoryLinks = $FPAVirtIORootSite.Links |
     Where-Object { $_.href -match 'virtio-win-[\d\.]+-\d+/?$' } |
     ForEach-Object {
         $ver = [regex]::Match($_.href, 'virtio-win-([\d\.]+-\d+)').Groups[1].Value
         [PSCustomObject]@{ Href = $_.href; Version = $ver }
     }
 
-$latest = $directoryLinks | 
-    Sort-Object { [version]($_.Version -replace '-', '.') } -Descending | 
+$latest = $FPAVirtIOdirectoryLinks |
+    Sort-Object { [version]($_.Version -replace '-', '.') } -Descending |
     Select-Object -First 1
 
-# Open Latest Directory
-$latestURL = $FedoraPeopleArchiveRootURL + $latest.Href
-$latestSite = Invoke-WebRequest -Uri $latestURL -UseBasicParsing
-if ($latestSite.StatusCode -eq 200) {
-    Write-Log -Message "Successfully accessed latest virtio-win directory at $latestURL" -Level "Info"
-} else {
-    Write-Log -Message "Failed to access latest virtio-win directory at $latestURL. Status Code: $($latestSite.StatusCode)" -Level "Error"
+if ($null -eq $latest) {
+    Write-Log -Message "No matching virtio-win version folders found in $ArchiveVirtIOURL" -Level "Error"
     exit 1
 }
 
-# Download the MSI File 64-bit
-$msiFileName = "virtio-win-gt-x64.msi"
-$msiLink = $latestSite.Links | Where-Object { $_.href -eq $msiFileName } | Select-Object -First 1
+$FPAVirtIOlatestURL = $ArchiveVirtIOURL + $latest.Href
+$VirtIOmsiDownloadURL = $FPAVirtIOlatestURL + $VirtIOPackageFileName
+$VirtIOmsiLocalPath = Join-Path -Path $ScriptTempPath -ChildPath $VirtIOPackageFileName
 
-if ($null -eq $msiLink) {
-    Write-Log -Message "Could not find $msiFileName in the latest directory." -Level "Error"
+
+# Download the MSI File 64-bit
+$VirtIOmsiFileName = "virtio-win-gt-x64.msi"
+$VirtIOmsiLink = $FPAVirtIORootSite.Links | Where-Object { $_.href -eq $VirtIOmsiFileName } | Select-Object -First 1
+
+if ($null -eq $VirtIOmsiLink) {
+    Write-Log -Message "Could not find $VirtIOmsiFileName in the latest directory." -Level "Error"
     exit 1
 }
 
 # Construct the full download URL
-$downloadURL = $latestURL + $msiFileName
-Write-Log -Message "Download URL: $downloadURL" -Level "Info"
+$VirtIOmsidownloadURL = $FPAVirtIOlatestURL + $VirtIOmsiFileName
+Write-Log -Message "Download URL: $VirtIOmsidownloadURL" -Level "Info"
 
 # Start download
-$outputPath = Join-Path $ScriptRoot $msiFileName
-Write-Log -Message "Starting download to: $outputPath" -Level "Info"
+Write-Log -Message "Starting download to: $ScriptTempPath" -Level "Info"
 
 try {
-    Invoke-WebRequest -Uri $downloadURL -OutFile $outputPath -UseBasicParsing
-    Write-Log -Message "Successfully downloaded $msiFileName" -Level "Info"
+    Invoke-WebRequest -Uri $VirtIOmsidownloadURL -OutFile $VirtIOmsiLocalPath -UseBasicParsing
+    Write-Log -Message "Successfully downloaded $VirtIOmsiFileName" -Level "Info"
 } catch {
-    Write-Log -Message "Failed to download $msiFileName. Error: $_" -Level "Error"
+    Write-Log -Message "Failed to download $VirtIOmsiFileName. Error: $_" -Level "Error"
     exit 1
 }
 
 # Install the MSI
-Write-Log -Message "Starting installation of $msiFileName" -Level "Info"
+Write-Log -Message "Starting installation of $VirtIOmsiFileName" -Level "Info"
 try {
-    $installProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$outputPath`" /qn /norestart" -Wait -PassThru
+    $installProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$VirtIOmsiLocalPath`" /qn /norestart" -Wait -PassThru
     if ($installProcess.ExitCode -eq 0) {
-        Write-Log -Message "Successfully installed $msiFileName" -Level "Info"
+        Write-Log -Message "Successfully installed $VirtIOmsiFileName" -Level "Info"
     } else {
-        Write-Log -Message "Installation of $msiFileName failed with exit code $($installProcess.ExitCode)" -Level "Error"
+        Write-Log -Message "Installation of $VirtIOmsiFileName failed with exit code $($installProcess.ExitCode)" -Level "Error"
         exit 1
     }
 } catch {
-    Write-Log -Message "Failed to install $msiFileName. Error: $_" -Level "Error"
+    Write-Log -Message "Failed to install $VirtIOmsiFileName. Error: $_" -Level "Error"
     exit 1
 }
 
-$CleanupConfirm = Read-Host "Should the downloaded MSI file be deleted? (Y/N)"
+$CleanupConfirm = Read-Host "Should the downloaded MSI file be deleted? (y/N)"
 if ($CleanupConfirm -match "^[Yy]") {
     try {
-        Remove-Item -Path $outputPath -Force
-        Write-Log -Message "Deleted downloaded MSI file: $outputPath" -Level "Info"
+        Remove-Item -Path $VirtIOmsiLocalPath -Force
+        Write-Log -Message "Deleted downloaded MSI file: $VirtIOmsiLocalPath" -Level "Info"
     } catch {
-        Write-Log -Message "Failed to delete downloaded MSI file: $outputPath. Error: $_" -Level "Warning"
+        Write-Log -Message "Failed to delete downloaded MSI file: $VirtIOmsiLocalPath. Error: $_" -Level "Warning"
     }
 } else {
-    Write-Log -Message "Downloaded MSI file retained at: $outputPath" -Level "Info"
+    Write-Log -Message "Downloaded MSI file retained at: $VirtIOmsiLocalPath" -Level "Info"
 }
 
-# EndRegion
+#EndRegion
