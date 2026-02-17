@@ -8,7 +8,7 @@
 
 if ($env:OS -ne "Windows_NT") {
     Write-Host "This script is only intended to run on Windows systems!" -ForegroundColor Red
-    Write-Host "Aktuelles System: $($PSVersionTable.OS)" -ForegroundColor Yellow
+    Write-Host "Current system: $($PSVersionTable.OS)" -ForegroundColor Yellow
     exit 1
 }
 
@@ -159,7 +159,7 @@ catch {
 
 # Access the Fedora People Archive to find the latest virtio-win version
 
-$FPAVirtIORootSite = Invoke-WebRequest -Uri $ArchiveVirtIOURL
+$FPAVirtIORootSite = Invoke-WebRequest -Uri $ArchiveVirtIOURL -useBasicParsing
 if ($FPAVirtIORootSite.StatusCode -ne 200) {
     Write-Log -Message "Failed to access Fedora People Archive at $ArchiveVirtIOURL. Status Code: $($FPAVirtIORootSite.StatusCode)" -Level "Error"
     exit 1
@@ -182,14 +182,11 @@ if ($null -eq $latest) {
     exit 1
 }
 
-$FPAVirtIOlatestURL = $ArchiveVirtIOURL + $latest.Href
-$VirtIOmsiDownloadURL = $FPAVirtIOlatestURL + $VirtIOPackageFileName
-$VirtIOmsiLocalPath = Join-Path -Path $ScriptTempPath -ChildPath $VirtIOPackageFileName
+$FPAVirtIOlatestSite = Invoke-WebRequest -Uri $FPAVirtIOlatestURL -UseBasicParsing
+$VirtIOmsiDownloadURL = $FPAVirtIOlatestURL + $VirtIOmsiFileName
+$VirtIOmsiLocalPath = Join-Path -Path $ScriptTempPath -ChildPath $VirtIOmsiFileName 
 
-
-# Download the MSI File 64-bit
-$VirtIOmsiFileName = "virtio-win-gt-x64.msi"
-$VirtIOmsiLink = $FPAVirtIORootSite.Links | Where-Object { $_.href -eq $VirtIOmsiFileName } | Select-Object -First 1
+$VirtIOmsiLink = $FPAVirtIORootSite | Where-Object { $_.href -eq $VirtIOmsiFileName } | Select-Object -First 1
 
 if ($null -eq $VirtIOmsiLink) {
     Write-Log -Message "Could not find $VirtIOmsiFileName in the latest directory." -Level "Error"
@@ -197,14 +194,14 @@ if ($null -eq $VirtIOmsiLink) {
 }
 
 # Construct the full download URL
-$VirtIOmsidownloadURL = $FPAVirtIOlatestURL + $VirtIOmsiFileName
-Write-Log -Message "Download URL: $VirtIOmsidownloadURL" -Level "Info"
+$VirtIOmsiDownloadURL = $FPAVirtIOlatestURL + $VirtIOmsiFileName
+Write-Log -Message "Download URL: $VirtIOmsiDownloadURL" -Level "Info"
 
 # Start download
 Write-Log -Message "Starting download to: $ScriptTempPath" -Level "Info"
 
 try {
-    Invoke-WebRequest -Uri $VirtIOmsidownloadURL -OutFile $VirtIOmsiLocalPath -UseBasicParsing
+    Invoke-WebRequest -Uri $VirtIOmsiDownloadURL -OutFile $VirtIOmsiLocalPath -UseBasicParsing
     Write-Log -Message "Successfully downloaded $VirtIOmsiFileName" -Level "Info"
 } catch {
     Write-Log -Message "Failed to download $VirtIOmsiFileName. Error: $_" -Level "Error"
