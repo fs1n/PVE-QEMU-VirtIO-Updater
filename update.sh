@@ -14,3 +14,8 @@
 #   It fetches the latest version from the GitHub repository, validates changes,
 #   and updates local files while preserving user configurations (.env).
 
+set -euo pipefail
+
+GITHUB_REPO_URL="https://github.com/fs1n/PVE-QEMU-VirtIO-Updater"
+
+# Function to fetch the latest version from GitHub
