@@ -182,11 +182,15 @@ if ($null -eq $latest) {
     exit 1
 }
 
+$FPAVirtIOlatestURL = ([Uri]::new([Uri]$ArchiveVirtIOURL, $latest.Href)).AbsoluteUri
+if (-not $FPAVirtIOlatestURL.EndsWith('/')) {
+    $FPAVirtIOlatestURL += '/'
+}
+
 $FPAVirtIOlatestSite = Invoke-WebRequest -Uri $FPAVirtIOlatestURL -UseBasicParsing
-$VirtIOmsiDownloadURL = $FPAVirtIOlatestURL + $VirtIOmsiFileName
 $VirtIOmsiLocalPath = Join-Path -Path $ScriptTempPath -ChildPath $VirtIOmsiFileName 
 
-$VirtIOmsiLink = $FPAVirtIORootSite | Where-Object { $_.href -eq $VirtIOmsiFileName } | Select-Object -First 1
+$VirtIOmsiLink = $FPAVirtIOlatestSite.Links | Where-Object { $_.href -eq $VirtIOmsiFileName } | Select-Object -First 1
 
 if ($null -eq $VirtIOmsiLink) {
     Write-Log -Message "Could not find $VirtIOmsiFileName in the latest directory." -Level "Error"
