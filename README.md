@@ -40,26 +40,26 @@ I got tired of manually checking if my Windows VMs on Proxmox had outdated VirtI
 
 ```mermaid
 graph LR
-    A["main.sh<br/>(Cron/Timer)"] -->|load libs| B["lib/default.sh<br/>lib/pve-interact.sh<br/>lib/state.sh<br/>lib/logger.sh"]
+    A["main.sh<br/>(Cron/Timer)"] -->|load libs| B["lib/default.func<br/>lib/pve-interact.func<br/>lib/state.func<br/>lib/logger.func"]
     A -->|init| C["Logging<br/>State Dir"]
     A -->|query| D["Proxmox API<br/>pvesh/qm"]
-    D -->|VM list<br/>Windows VMs| E["lib/pve-interact.sh<br/>get_windows_vms"]
+    D -->|VM list<br/>Windows VMs| E["lib/pve-interact.func<br/>get_windows_vms"]
     E -->|guest exec| F["Windows VM<br/>QEMU Guest Agent"]
     F -->|version info| E
     E -->|current versions| A
     A -->|fetch| G["Fedora Archive<br/>VirtIO/QEMU GA"]
     G -->|latest versions| A
     A -->|compare versions| H["Version Logic"]
-    H -->|check state| I["lib/state.sh<br/>.state files"]
+    H -->|check state| I["lib/state.func<br/>.state files"]
     I -->|load history| H
     H -->|updates needed?| J{"Show Nag?"}
-    J -->|yes| K["lib/svg-nag.sh<br/>render SVG"]
+    J -->|yes| K["lib/svg-nag.func<br/>render SVG"]
     K -->|write| L["/usr/share/pve-manager/images/<br/>update-VMID.svg"]
     K -->|link in desc| A
     A -->|update description| D
     D -->|UI displays banner| M["Proxmox UI<br/>VM Description"]
     A -->|persist state| I
-    A -->|notify| N["lib/notification.sh<br/>SMTP/Webhook/Graph"]
+    A -->|notify| N["lib/notification.func<br/>SMTP/Webhook/Graph"]
 ```
 
 **Workflow:**
@@ -81,13 +81,11 @@ graph LR
 
 ### Update Banner in Proxmox UI
 
-![Update Banner - Single Component](docs/assets/screenshots/update-banner-single-placeholder.png)
-*SVG banner for VirtIO or QEMU GA update (single component)*
+*Update Banner - Single Component*: SVG banner for VirtIO or QEMU GA update (single component).
 
-![Update Banner - Both Components](docs/assets/screenshots/update-banner-both-placeholder.png)
-*SVG banner when both VirtIO and QEMU GA updates are available*
+*Update Banner - Both Components*: SVG banner when both VirtIO and QEMU GA updates are available.
 
-> **Note:** Screenshots coming soon. Banners appear in the VM Summary/Description area of the Proxmox web UI.
+> **Note:** Screenshots will be added in a future update. Banners appear in the VM Summary/Description area of the Proxmox web UI.
 
 ## Requirements
 
