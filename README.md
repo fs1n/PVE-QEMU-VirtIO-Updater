@@ -119,43 +119,40 @@ For complete configuration reference, see [Configuration Documentation](docs/03-
 
 ## Quick Start
 
-### Option 1: Update from inside a Windows VM (Guest-Side)
-
-```powershell
-# Just run this in PowerShell 7
-.\updater-win.ps1
-```
-
-### Option 2: Host-Side Monitoring (Recommended)
-
 ```bash
 # Clone the repository
+```bash
 git clone https://github.com/fs1n/PVE-QEMU-VirtIO-Updater.git
 cd PVE-QEMU-VirtIO-Updater
+```
 
 # Create configuration
+```bash
 cp .env.example .env
+```
 # Edit .env as needed (optional - defaults work for most setups)
 
 # Make scripts executable
-chmod +x main.sh update.sh
-
-# Run manually for testing
-./main.sh
-
-# Schedule via cron (runs daily at 2 AM)
-echo "0 2 * * * /path/to/PVE-QEMU-VirtIO-Updater/main.sh" | crontab -
+```bash
+chmod +x main.sh lib/*.func
 ```
 
-For detailed installation, configuration, and scheduling options, see the [Installation Documentation](docs/02-installation.md).
+# Run manually for testing
+```bash
+./main.sh
+```
+
+# Schedule via cron (runs daily at 2 AM)
+```bash
+echo "0 2 * * * /path/to/PVE-QEMU-VirtIO-Updater/main.sh" | crontab -
+```
 
 ## Known Limitations
 
 ⚠️ **Current WIP Limitations:**
 
-- **Notification Channels**: SMTP, MS Graph, and webhook integrations are placeholder code only (see `lib/notification.sh`)
+- **Notification Channels**: SMTP, MS Graph, and webhook integrations are placeholder code only (see `lib/notification.func`)
 - **Self-Update**: `update.sh` is a stub header with no implementation
-- **Documentation Drift**: Documentation in `docs/` may describe features not yet fully implemented
 - **All Features**: Treat everything as work-in-progress and subject to change
 
 ## Roadmap
@@ -166,18 +163,6 @@ For detailed installation, configuration, and scheduling options, see the [Insta
 - [ ] **Self-Update Mechanism**: Implement `update.sh` for script auto-updates
 - [ ] **Enhanced Clone Detection**: Improve vmgenid tracking and state validation
 - [ ] **Error Handling**: Better error recovery and logging granularity
-
-## Documentation
-
-Full documentation is available in the `docs/` directory:
-
-- [Overview & Architecture](docs/01-overview.md)
-- [Installation Guide](docs/02-installation.md)
-- [Configuration Reference](docs/03-configuration.md)
-- [Operation & Usage](docs/04-operation.md)
-- [Troubleshooting](docs/05-troubleshooting.md)
-
-**MkDocs Site**: Documentation site can be generated via `./generate-docs.sh` (requires MkDocs with Material theme).
 
 ## License
 
