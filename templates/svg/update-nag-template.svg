@@ -1,39 +1,41 @@
-<svg width="380" height="180" xmlns="http://www.w3.org/2000/svg">
+<svg width="380" height="180" viewBox="0 0 380 180" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ff8c00;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ff6600;stop-opacity:1" />
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f46e5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1" />
     </linearGradient>
+    
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.2"/>
+    </filter>
   </defs>
+
+  <rect width="380" height="180" fill="url(#bg-grad)" rx="16"/>
   
-  <!-- Background -->
-  <rect width="380" height="180" fill="url(#grad)" rx="5"/>
-  <rect x="0" y="0" width="5" height="180" fill="#cc5500" rx="5"/>
+  <rect x="12" y="55" width="356" height="80" fill="white" fill-opacity="0.1" rx="12" stroke="white" stroke-opacity="0.2"/>
+
+  <circle cx="35" cy="32" r="14" fill="white" fill-opacity="0.2"/>
+  <path d="M35 24v10M35 38h.01" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
   
-  <!-- Warning Icon -->
-  <circle cx="30" cy="30" r="20" fill="#ffffff"/>
-  <text x="30" y="40" font-family="Arial" font-size="28" fill="#ff6600" text-anchor="middle" font-weight="bold">⚠</text>
-  
-  <!-- Title -->
-  <text x="60" y="36" font-family="Arial, sans-serif" font-size="18" font-weight="600" fill="#ffffff">{{ title }}</text>
-  
-  <!-- Info Box -->
-  <rect x="15" y="55" width="350" height="75" fill="rgba(255,255,255,0.15)" rx="4"/>
-  
-  <!-- Text Content -->
-  <text x="25" y="75" font-family="Arial" font-size="13" fill="#ffffff" font-weight="bold">Current Version:</text>
-  <text x="140" y="75" font-family="Courier New, monospace" font-size="13" fill="#ffffff">{{ current_version }}</text>
-  
-  <text x="25" y="95" font-family="Arial" font-size="13" fill="#ffffff" font-weight="bold">Available Version:</text>
-  <rect x="158" y="84" width="187" height="18" fill="rgba(255,255,255,0.2)" rx="3"/>
-  <text x="162" y="95" font-family="Courier New, monospace" font-size="13" fill="#ffffff" font-weight="bold">{{ available_version }}</text>
-  
-  <text x="25" y="115" font-family="Arial" font-size="13" fill="#ffffff" font-weight="bold">Release Date:</text>
-  <text x="140" y="115" font-family="Arial" font-size="13" fill="#ffffff">{{ release_date }}</text>
-  
-  <!-- Divider -->
-  <line x1="15" y1="140" x2="365" y2="140" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-  
-  <!-- Footer -->
-  <text x="25" y="160" font-family="Arial" font-size="12" fill="#ffffff" font-style="italic">ℹ️ Update recommended during next maintenance window</text>
+  <text x="58" y="37" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="700" fill="white" letter-spacing="-0.02em">
+    {{ title }}
+  </text>
+
+  <g font-family="Inter, system-ui, sans-serif" font-size="12">
+    <text x="28" y="78" fill="white" fill-opacity="0.7" font-weight="500">Current</text>
+    <text x="130" y="78" fill="white" font-family="ui-monospace, monospace" font-weight="600">{{ current_version }}</text>
+    
+    <rect x="24" y="86" width="332" height="22" fill="white" fill-opacity="0.15" rx="6"/>
+    <text x="28" y="101" fill="white" font-weight="500">Available</text>
+    <text x="130" y="101" fill="#60a5fa" font-family="ui-monospace, monospace" font-weight="700">{{ available_version }}</text>
+    
+    <text x="28" y="124" fill="white" fill-opacity="0.7" font-weight="500">Release Date</text>
+    <text x="130" y="124" fill="white" font-weight="500">{{ release_date }}</text>
+  </g>
+
+  <circle cx="29" cy="156" r="5" fill="white" fill-opacity="0.3"/>
+  <text x="27.5" y="159.5" font-family="serif" font-size="8" fill="white" font-weight="bold">i</text>
+  <text x="42" y="160" font-family="Inter, system-ui, sans-serif" font-size="11" fill="white" fill-opacity="0.8">
+    Update recommended during next maintenance window
+  </text>
 </svg>
