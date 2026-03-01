@@ -33,7 +33,7 @@ ENV_FILE="$SCRIPT_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
   set -o allexport
   . "$ENV_FILE"
-  set +o allexport
+#   set +o allexport # Currently removed to fix array sourcing issues
 fi
 
 ##################################################################################

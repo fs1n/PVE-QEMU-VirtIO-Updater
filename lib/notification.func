@@ -5,7 +5,7 @@
 # Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
 # Date: 2025-01-31
 #
-# Dependencies: curl (for webhooks), msmtp or sendmail (for SMTP), jq
+# Dependencies: curl (for webhooks and SMTP) and jq
 # Environment: NOTIFICATION_CHANNELS, SMTP_SERVER, MSGRAPH_TOKEN, WEBHOOK_URL
 # Usage: source lib/notification.sh; notification_init; notification_send "subject" "body"
 #
@@ -62,8 +62,34 @@ function notification_send() {
 function notification_email_SMTP() {
     local subject=${1-}
     local body=${2-}
-    # Todo: Implement email notification logic here using "$subject" and "$body"
-    :
+
+    # Build one --mail-rcpt flag per recipient
+    local rcpt_args=()
+    for addr in "${MAIL_TO[@]}"; do
+        rcpt_args+=(--mail-rcpt "$addr")
+    done
+
+    # Comma-separated list for the To: header
+    local to_header
+    to_header=$(IFS=','; echo "${MAIL_TO[*]}")
+
+    # TLS flag (STARTTLS on port 587; use smtps:// instead for port 465)
+    local tls_flag=()
+    [[ "${SMTP_USE_TLS:-true}" == "true" ]] && tls_flag=(--ssl-reqd)
+
+    curl --silent --show-error \
+        --url "smtp://${SMTP_HOST}:${SMTP_PORT:-587}" \
+        "${tls_flag[@]}" \
+        --user "${SMTP_USER}:${SMTP_PASSWORD}" \
+        --mail-from "$SMTP_FROM" \
+        "${rcpt_args[@]}" \
+        --upload-file - <<EOF
+From: $SMTP_FROM
+To: $to_header
+Subject: $subject
+
+$body
+EOF
 }
 
 # @function notification_email_MSGRAPH
