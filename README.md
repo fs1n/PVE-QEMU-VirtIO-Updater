@@ -115,39 +115,36 @@ Key configuration options:
 - **SVG Templates**: `SVG_IMAGE_PATH`, `SVG_IMAGE_TEMPLATE`
 - **Notifications** (not implemented): `NOTIFICATION_CHANNELS`, SMTP/webhook/MS Graph settings
 
-For complete configuration reference, see [Configuration Documentation](docs/03-configuration.md).
+# Quick Start
 
-## Quick Start
-
-```bash
-# Clone the repository
+## Clone the repository
 ```bash
 git clone https://github.com/fs1n/PVE-QEMU-VirtIO-Updater.git
 cd PVE-QEMU-VirtIO-Updater
 ```
 
-# Create configuration
+## Create configuration
 ```bash
 cp .env.example .env
 ```
-# Edit .env as needed (optional - defaults work for most setups)
+## Edit .env as needed (optional - defaults work for most setups)
 
-# Make scripts executable
+## Make scripts executable
 ```bash
 chmod +x main.sh lib/*.func
 ```
 
-# Run manually for testing
+## Run manually for testing
 ```bash
 ./main.sh
 ```
 
-# Schedule via cron (runs daily at 2 AM)
+## Schedule via cron (runs daily at 2 AM)
 ```bash
 echo "0 2 * * * /path/to/PVE-QEMU-VirtIO-Updater/main.sh" | crontab -
 ```
 
-## Known Limitations
+# Known Limitations
 
 ⚠️ **Current WIP Limitations:**
 
@@ -155,7 +152,7 @@ echo "0 2 * * * /path/to/PVE-QEMU-VirtIO-Updater/main.sh" | crontab -
 - **Self-Update**: `update.sh` is a stub header with no implementation
 - **All Features**: Treat everything as work-in-progress and subject to change
 
-## Roadmap
+# Roadmap
 
 > **Note:** These are planned features, not commitments. Timelines are uncertain.
 
@@ -164,6 +161,7 @@ echo "0 2 * * * /path/to/PVE-QEMU-VirtIO-Updater/main.sh" | crontab -
 - [ ] **Enhanced Clone Detection**: Improve vmgenid tracking and state validation
 - [ ] **Error Handling**: Better error recovery and logging granularity
 
-## License
+
+# License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
