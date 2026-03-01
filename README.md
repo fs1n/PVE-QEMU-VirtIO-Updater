@@ -81,13 +81,11 @@ graph LR
 
 ### Update Banner in Proxmox UI
 
-![Update Banner - Single Component](docs/assets/screenshots/update-banner-single-placeholder.png)
-*SVG banner for VirtIO or QEMU GA update (single component)*
+*Update Banner - Single Component*: SVG banner for VirtIO or QEMU GA update (single component).
 
-![Update Banner - Both Components](docs/assets/screenshots/update-banner-both-placeholder.png)
-*SVG banner when both VirtIO and QEMU GA updates are available*
+*Update Banner - Both Components*: SVG banner when both VirtIO and QEMU GA updates are available.
 
-> **Note:** Screenshots coming soon. Banners appear in the VM Summary/Description area of the Proxmox web UI.
+> **Note:** Screenshots will be added in a future update. Banners appear in the VM Summary/Description area of the Proxmox web UI.
 
 ## Requirements
 
