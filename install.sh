@@ -239,7 +239,7 @@ check_svg_image_path() {
 check_dependencies() {
     print_step "Checking dependencies..."
     
-    local -a required_tools=("curl" "jq")
+    local -a required_tools=("curl" "jq" "grep" "sed" "awk" "sort" "whiptail")
     local -a optional_tools=("pvesh" "qm" "logger")
     local -a missing_required=()
     local -a missing_optional=()

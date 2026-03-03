@@ -21,13 +21,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
 
-# Source all functions in lib files
-for lib_file in "$LIB_DIR"/*.func; do
-  if [[ -f "$lib_file" ]]; then
-    source "$lib_file"
-  fi
-done
-
 # Load environment overrides if they exist
 ENV_FILE="$SCRIPT_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
@@ -35,6 +28,13 @@ if [[ -f "$ENV_FILE" ]]; then
   . "$ENV_FILE"
 #   set +o allexport # Currently removed to fix array sourcing issues
 fi
+
+# Source all functions in lib files
+for lib_file in "$LIB_DIR"/*.func; do
+  if [[ -f "$lib_file" ]]; then
+    source "$lib_file"
+  fi
+done
 
 ##################################################################################
 #                                   Init                                         #

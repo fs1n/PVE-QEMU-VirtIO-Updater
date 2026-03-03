@@ -29,13 +29,16 @@ function notification_init() {
 
 # @function notification_send
 # @description Routes update notifications to all enabled channels defined in NOTIFICATION_CHANNELS
-# @args subject body
+# @args subject body [content_type]
+#   content_type: MIME type for email channels (default: text/plain). Use "text/html" for HTML bodies.
 # @returns 0 on successful dispatch to all channels (or if no channels are configured)
 # @example
-#   NOTIFICATION_CHANNELS="smtp,webhook" notification_send "Update completed" "All guests are now on the latest VirtIO drivers."
+#   NOTIFICATION_CHANNELS="smtp,webhook" notification_send "Update available" "Plain text body"
+#   NOTIFICATION_CHANNELS="smtp" notification_send "Update available" "<b>HTML body</b>" "text/html"
 function notification_send() {
     local subject=${1-}
     local body=${2-}
+    local content_type="${3:-text/plain}"
 
     # If NOTIFICATION_CHANNELS is unset or empty, do nothing and succeed.
     if [[ -z "${NOTIFICATION_CHANNELS-}" ]]; then
@@ -46,8 +49,8 @@ function notification_send() {
     read -ra CHANNELS <<< "$NOTIFICATION_CHANNELS"
     for channel in "${CHANNELS[@]}"; do
         case "$channel" in
-            smtp) notification_email_SMTP "$subject" "$body" ;;
-            msgraph) notification_email_MSGRAPH "$subject" "$body" ;;
+            smtp) notification_email_SMTP "$subject" "$body" "$content_type" ;;
+            msgraph) notification_email_MSGRAPH "$subject" "$body" "$content_type" ;;
             webhook) notification_webhook "$subject" "$body" ;;
         esac
     done
@@ -55,13 +58,16 @@ function notification_send() {
 
 # @function notification_email_SMTP
 # @description Sends email notification via SMTP (requires SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, MAIL_TO, SMTP_TLS_MODE configuration)
-# @args subject body
+# @args subject body [content_type]
+#   content_type: MIME type (default: text/plain). Use "text/html" for HTML bodies.
 # @returns 0 on success, 1 on failure
 # @example
 #   notification_email_SMTP "Update completed" "All guests are now on the latest VirtIO drivers."
+#   notification_email_SMTP "Update completed" "<b>HTML body</b>" "text/html"
 function notification_email_SMTP() {
     local subject=${1-}
     local body=${2-}
+    local content_type="${3:-text/plain}"
 
     # Validate required configuration
     if [[ -z "${SMTP_HOST-}" ]] || [[ -z "${MAIL_TO-}" ]]; then
@@ -135,7 +141,7 @@ To: $to_header
 Subject: $subject
 Date: $(date -R)
 MIME-Version: 1.0
-Content-Type: text/html; charset="UTF-8"
+Content-Type: ${content_type}; charset="UTF-8"
 
 $body
 EOF
@@ -145,14 +151,16 @@ EOF
 
 # @function notification_email_MSGRAPH
 # @description Sends email notification via Microsoft Graph API (requires MSGRAPH_TOKEN, FROM, TO configuration)
-# @args subject body
+# @args subject body [content_type]
+#   content_type: MIME type (default: text/plain). Use "text/html" for HTML bodies.
 # @returns 0 on success, 1 on failure
 # @example
 #   MSGRAPH_TOKEN="Bearer ..." notification_email_MSGRAPH "Update completed" "All guests are now on the latest VirtIO drivers."
 function notification_email_MSGRAPH() {
     local subject=${1-}
     local body=${2-}
-    # Todo: Implement Microsoft Graph email notification logic here using "$subject" and "$body"
+    local content_type="${3:-text/plain}"
+    # Todo: Implement Microsoft Graph email notification logic here using "$subject", "$body", and "$content_type"
     :
 }
 
