@@ -54,42 +54,93 @@ function notification_send() {
 }
 
 # @function notification_email_SMTP
-# @description Sends email notification via SMTP (requires SMTP_SERVER, FROM, TO configuration)
+# @description Sends email notification via SMTP (requires SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, MAIL_TO, SMTP_TLS_MODE configuration)
 # @args subject body
 # @returns 0 on success, 1 on failure
 # @example
-#   SMTP_SERVER="mail.example.com" notification_email_SMTP "Update completed" "All guests are now on the latest VirtIO drivers."
+#   notification_email_SMTP "Update completed" "All guests are now on the latest VirtIO drivers."
 function notification_email_SMTP() {
     local subject=${1-}
     local body=${2-}
 
-    # Build one --mail-rcpt flag per recipient
+    # Validate required configuration
+    if [[ -z "${SMTP_HOST-}" ]] || [[ -z "${MAIL_TO-}" ]]; then
+        echo "Error: SMTP_HOST and MAIL_TO are required" >&2
+        return 1
+    fi
+
+    local smtp_port="${SMTP_PORT:-587}"
+    local smtp_user="${SMTP_USER-}"
+    local smtp_password="${SMTP_PASSWORD-}"
+
+    # Build recipient flags
     local rcpt_args=()
     for addr in "${MAIL_TO[@]}"; do
         rcpt_args+=(--mail-rcpt "$addr")
     done
 
-    # Comma-separated list for the To: header
+    # Build To header
     local to_header
     to_header=$(IFS=','; echo "${MAIL_TO[*]}")
 
-    # TLS flag (STARTTLS on port 587; use smtps:// instead for port 465)
+    # Determine protocol and TLS flags from SMTP_TLS_MODE.
+    # Port is independent of TLS mode means you could technicaly use port 443 with implicit TLS.
+    #   none              -> smtp://, plaintext
+    #   starttls          -> smtp:// + --ssl (opportunistic STARTTLS, negotiate)
+    #   starttls-required -> smtp:// + --ssl-reqd (enforce STARTTLS, fail if unavailable)
+    #   implicit          -> smtps:// (SSL/TLS from handshake start, e.g. port 465 or 443)
+    local tls_mode="${SMTP_TLS_MODE:-starttls-required}"
+    local protocol="smtp"
     local tls_flag=()
-    [[ "${SMTP_USE_TLS:-true}" == "true" ]] && tls_flag=(--ssl-reqd)
 
+    case "$tls_mode" in
+        none)
+            protocol="smtp"
+            tls_flag=()
+            ;;
+        starttls)
+            protocol="smtp"
+            tls_flag=(--ssl)
+            ;;
+        starttls-required)
+            protocol="smtp"
+            tls_flag=(--ssl-reqd)
+            ;;
+        implicit)
+            protocol="smtps"
+            tls_flag=()
+            ;;
+        *)
+            echo "Error: Unknown SMTP_TLS_MODE '${tls_mode}'. Valid values: none, starttls, starttls-required, implicit" >&2
+            return 1
+            ;;
+    esac
+
+    # Build authentication flags
+    local auth_flag=()
+    if [[ -n "$smtp_user" && -n "$smtp_password" ]]; then
+        auth_flag=(--user "${smtp_user}:${smtp_password}")
+    fi
+
+    # Send email
     curl --silent --show-error \
-        --url "smtp://${SMTP_HOST}:${SMTP_PORT:-587}" \
+        --url "${protocol}://${SMTP_HOST}:${smtp_port}" \
         "${tls_flag[@]}" \
-        --user "${SMTP_USER}:${SMTP_PASSWORD}" \
+        "${auth_flag[@]}" \
         --mail-from "$SMTP_FROM" \
         "${rcpt_args[@]}" \
         --upload-file - <<EOF
 From: $SMTP_FROM
 To: $to_header
 Subject: $subject
+Date: $(date -R)
+MIME-Version: 1.0
+Content-Type: text/html; charset="UTF-8"
 
 $body
 EOF
+
+    return $?
 }
 
 # @function notification_email_MSGRAPH

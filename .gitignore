@@ -1,6 +1,8 @@
 .env
 *.log
+logs/
 db.json
 manage.sh
 .state/
 site/
+CLAUDE.md

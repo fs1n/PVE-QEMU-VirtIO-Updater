@@ -1,6 +1,5 @@
 # PVE-QEMU-VirtIO-Updater
 
-![PowerShell](https://img.shields.io/badge/PowerShell-%235391FE.svg?style=for-the-badge&logo=powershell&logoColor=white)
 ![Proxmox](https://img.shields.io/badge/proxmox-proxmox?style=for-the-badge&logo=proxmox&logoColor=%23E57000&labelColor=%232b2a33&color=%232b2a33)
 ![Bash Script](https://img.shields.io/badge/bash_script-%23121011.svg?style=for-the-badge&logo=gnu-bash&logoColor=white)
 
@@ -115,33 +114,116 @@ Key configuration options:
 - **SVG Templates**: `SVG_IMAGE_PATH`, `SVG_IMAGE_TEMPLATE`
 - **Notifications** (not implemented): `NOTIFICATION_CHANNELS`, SMTP/webhook/MS Graph settings
 
-# Quick Start
+# Installation
 
-## Clone the repository
+## Automated Installation (Recommended)
+
+The easiest way to install and keep the tool updated. Runs as root, handles all setup automatically.
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/fs1n/PVE-QEMU-VirtIO-Updater/main/install.sh)"
+```
+
+This will:
+- ✓ Install to `/opt/pve-qemu-virtio-updater/`
+- ✓ Backup and preserve existing configuration (`.env`, `.state/`, `logs/`)
+- ✓ Set proper file permissions
+- ✓ Check dependencies
+- ✓ Work for both new installations and updates
+
+## Manual Installation
+
+If you prefer to install manually or modify the installation process:
+
+### Clone the repository
 ```bash
 git clone https://github.com/fs1n/PVE-QEMU-VirtIO-Updater.git
 cd PVE-QEMU-VirtIO-Updater
 ```
 
-## Create configuration
+### Create configuration
 ```bash
 cp .env.example .env
 ```
-## Edit .env as needed (optional - defaults work for most setups)
 
-## Make scripts executable
+### Edit configuration (optional - defaults work for most setups)
+```bash
+nano .env
+```
+
+### Make scripts executable
 ```bash
 chmod +x main.sh lib/*.func
 ```
 
-## Run manually for testing
+### Run manually for testing
 ```bash
 ./main.sh
 ```
 
-## Schedule via cron (runs daily at 2 AM)
+# Quick Start / Running
+
+## Run manually for testing
 ```bash
-echo "0 2 * * * /path/to/PVE-QEMU-VirtIO-Updater/main.sh" | crontab -
+cd /opt/pve-qemu-virtio-updater
+./main.sh
+```
+
+## Schedule automatic execution
+
+Choose one of the following methods to run the updater regularly (e.g., daily):
+
+### Option A: Cron Job
+```bash
+# Runs daily at 2 AM
+echo "0 2 * * * /opt/pve-qemu-virtio-updater/main.sh" | crontab -
+```
+
+### Option B: Systemd Timer (Recommended)
+
+Create the service file:
+```bash
+sudo tee /etc/systemd/system/pve-virtio-updater.service > /dev/null << 'EOF'
+[Unit]
+Description=PVE-QEMU-VirtIO-Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pve-qemu-virtio-updater/main.sh
+StandardOutput=journal
+StandardError=journal
+EOF
+```
+
+Create the timer file:
+```bash
+sudo tee /etc/systemd/system/pve-virtio-updater.timer > /dev/null << 'EOF'
+[Unit]
+Description=Run PVE-QEMU-VirtIO-Updater daily
+Requires=pve-virtio-updater.service
+
+[Timer]
+OnCalendar=daily
+OnCalendar=02:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+```
+
+Enable and start the timer:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now pve-virtio-updater.timer
+```
+
+Check status:
+```bash
+sudo systemctl status pve-virtio-updater.timer
+sudo journalctl -u pve-virtio-updater.service -f
 ```
 
 # Known Limitations
