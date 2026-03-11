@@ -89,36 +89,28 @@ function notification_email_SMTP() {
     local to_header
     to_header=$(IFS=','; echo "${MAIL_TO[*]}")
 
-    # Determine protocol and TLS flags from SMTP_TLS_MODE.
-    # Port is independent of TLS mode means you could technicaly use port 443 with implicit TLS.
-    #   none              -> smtp://, plaintext
-    #   starttls          -> smtp:// + --ssl (opportunistic STARTTLS, negotiate)
-    #   starttls-required -> smtp:// + --ssl-reqd (enforce STARTTLS, fail if unavailable)
-    #   implicit          -> smtps:// (SSL/TLS from handshake start, e.g. port 465 or 443)
-    local tls_mode="${SMTP_TLS_MODE:-starttls-required}"
-    local protocol="smtp"
-    local tls_flag=()
-
-    case "$tls_mode" in
-        none)
-            protocol="smtp"
-            tls_flag=()
-            ;;
-        starttls)
+    # Protocol and TLS flags are derived from SMTP_PORT using standard IANA assignments:
+    #   25  -> smtp:// + --ssl      (relay; opportunistic STARTTLS)
+    #   587 -> smtp:// + --ssl-reqd (submission; enforce STARTTLS)
+    #   465 -> smtps://             (implicit TLS from first byte)
+    #   *   -> smtp:// + --ssl-reqd (safe fallback)
+    local protocol tls_flag=()
+    case "$smtp_port" in
+        25)
             protocol="smtp"
             tls_flag=(--ssl)
             ;;
-        starttls-required)
+        587)
             protocol="smtp"
             tls_flag=(--ssl-reqd)
             ;;
-        implicit)
+        465)
             protocol="smtps"
             tls_flag=()
             ;;
         *)
-            echo "Error: Unknown SMTP_TLS_MODE '${tls_mode}'. Valid values: none, starttls, starttls-required, implicit" >&2
-            return 1
+            protocol="smtp"
+            tls_flag=(--ssl-reqd)
             ;;
     esac
 

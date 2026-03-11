@@ -20,9 +20,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
+ENV_FILE="$SCRIPT_DIR/.env"
 
 # Load environment overrides if they exist
-ENV_FILE="$SCRIPT_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
   set -o allexport
   . "$ENV_FILE"
@@ -40,24 +40,35 @@ done
 #                                   Init                                         #
 ##################################################################################
 
-init_logger \
-  --log "${LOG_DIR:=$SCRIPT_DIR/logs}/proxmox_virtio_updater.log" \
-  --level "${LOG_LEVEL:=info}" \
-  --format "${LOG_FORMAT:=[%d] [%l] %m}" \
-  --quiet \
-  --journal \
-  --tag "PVE-VirtIO-Updater"
+load_init_state
 
+if [[ "$LOGGER_INITIALIZED" != "true" ]]; then
+  init_logger \
+    --log "${LOG_DIR:=$SCRIPT_DIR/logs}/proxmox_virtio_updater.log" \
+    --level "${LOG_LEVEL:=info}" \
+    --format "${LOG_FORMAT:=[%d] [%l] %m}" \
+    --quiet \
+    --journal \
+    --tag "PVE-VirtIO-Updater"
+
+  save_init_state "true"
+
+fi
+
+# Checks for required dependencies and exits if any are missing
+# Don't ever handly by state! I had the issue that dependencies went missing
+# and the script then broke.
 check_script_dependencies
 
 # Initialize state directory
+# Don't state handle this either, its a simple if not so there is not much performance lost by this check.
 init_state_dir
 
 ##################################################################################
 #                             Check for Updates                                 #
 ##################################################################################
 
-windows_vms_all=$(get_windows_vms)  
+windows_vms_all=$(get_windows_vms)
 windows_vms=$(echo "$windows_vms_all" | jq 'to_entries | map(select(.value.status == "running")) | from_entries')
 
 if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then

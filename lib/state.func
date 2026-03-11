@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
 # Module: state.sh (PVE-QEMU-VirtIO-Updater)
-# Description: VM state management for tracking update status, version history, and VM identity across runs
+# Description: VM state management for tracking update status, version history, and VM identity across runs, also keeps track of script state like init_logger so it won't init all the time.
 # Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
 # Date: 2025-01-31
 #
 # Dependencies: grep, sed, jq
 # Environment: STATE_DIR, SCRIPT_DIR
-# Usage: source lib/state.sh; init_state_dir; save_vm_state vmid version1 version2 nag_shown vmgenid
+# Usage: source lib/state.sh; init_state_dir; save_vm_state vmid version1 version2 nag_shown vmgenid; load_vm_state vmid; should_show_nag vmid current_virtio latest_virtio current_qemu_ga latest_qemu_ga current_vmgenid; cleanup_stale_state_files windows_vms; save_init_state "true"; load_init_state
 #
 # Functions:
 #   - init_state_dir: Create state directory if needed
@@ -16,8 +16,8 @@
 #   - load_vm_state: Load VM state from file and export as environment variables
 #   - should_show_nag: Determine if update notification should be displayed
 #   - cleanup_stale_state_files: Remove state files for VMs that no longer exist
-
-# State management for VM update tracking
+#   - save_init_state: Save state of script initialization steps
+#   - load_init_state: Load init state from file and export as environment variables
 
 STATE_DIR="${STATE_DIR:-$SCRIPT_DIR/.state}"
 
@@ -139,7 +139,7 @@ function load_vm_state() {
         [[ -z "$key" ]] && continue
         
         # Trim whitespace
-        # Hope AI didn't lie^^ but it seems to work out in my tests
+        # Hope AI didn't lie^^ but it seems to work in my tests
         key="${key#"${key%%[![:space:]]*}"}"
         key="${key%"${key##*[![:space:]]}"}"
         value="${value#"${value%%[![:space:]]*}"}"
@@ -282,4 +282,79 @@ function cleanup_stale_state_files() {
     done
 
     shopt -u nullglob
+}
+
+# @function save_init_state
+# @description Save state of script initialization steps (currently just logger initialized) to avoid redundant
+# @args log_init_status (bool): Initialization status (true / false)
+# @returns 0 on success, 1 if file write failed
+# @example
+#   save_init_state "true"
+# Save current initialization state
+function save_init_state() {
+    local log_init_status=$1
+
+    local state_file="$STATE_DIR/init.state"
+
+    {
+        cat > "$state_file" <<EOF
+# Auto-generated state file for script initialization
+LOGGER_INITIALIZED=$log_init_status
+EOF
+    } || {
+        log_error "Failed to save initialization state to '$state_file' (disk full? permissions?)"
+        return 1
+    }
+
+    log_debug "Saved initialization state to '$state_file'"
+}
+
+# @function load_init_state
+# @description Load init state from file and export as environment variables (log_init_status)
+# @args
+# @returns 0 on success (state found), 1 if state file not found; exports STORED_* variables
+# @example
+#   load_init_state
+#   echo "$LOGGER_INITIALIZED"
+# Load initialization state from file using Line by Line parsing
+# Idea based on https://stackoverflow.com/questions/1521462/looping-through-the-content-of-a-file-in-bash
+function load_init_state() {
+    local state_file="$STATE_DIR/init.state"
+    
+    if [[ ! -f "$state_file" ]]; then
+        return 1
+    fi
+    
+    # Initialize variables with defaults
+    local log_init_status="false"
+    
+    while IFS='=' read -r key value; do
+        # Skip comments and empty lines
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "$key" ]] && continue
+        
+        # Trim whitespace
+        # Hope AI didn't lie^^ but it seems to work in my tests
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
+        
+        # Remove surrounding quotes if present
+        value="${value#\"}"
+        value="${value%\"}"
+        
+        # Match known keys only (whitelist approach)
+        # Maybe a source for issues but safer than eval and safer than source / dot sourcing an "untrusted" file
+        # Keep the echo in case of unknown keys. This is bootstrap code to avoid weird logger behavior if a log function is called befor init.
+        case "$key" in
+            LOGGER_INITIALIZED) log_init_status="$value" ;;
+            *) echo "WARN: Unknown key in init state file: $key" >&2 ;;
+        esac
+    done < "$state_file"
+    
+    # Export with validation
+    export LOGGER_INITIALIZED="$log_init_status"
+    
+    return 0
 }
