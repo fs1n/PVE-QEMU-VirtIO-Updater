@@ -31,10 +31,12 @@ STATE_DIR="${STATE_DIR:-$SCRIPT_DIR/.state}"
 function init_state_dir() {
     if [[ ! -d "$STATE_DIR" ]]; then
         if ! mkdir -p "$STATE_DIR"; then  
-            log_error "Failed to create state directory: $STATE_DIR"  
+            log_error "Failed to create state directory: $STATE_DIR"
+            # echo "ERROR: Failed to create state directory: $STATE_DIR" >&2
             return 1  
         fi
         log_debug "Created state directory: $STATE_DIR"
+        # echo "DEBUG: Created state directory: $STATE_DIR" >&2
     fi
     return 0
 }
@@ -322,7 +324,7 @@ function load_init_state() {
     local state_file="$STATE_DIR/init.state"
     
     if [[ ! -f "$state_file" ]]; then
-        return 1
+        export LOGGER_INITIALIZED="false"
     fi
     
     # Initialize variables with defaults

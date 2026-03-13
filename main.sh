@@ -13,7 +13,7 @@
 #   This script serves as the main entry point for the PVE-QEMU-VirtIO-Updater.
 #   It orchestrates the complete workflow: initialization, dependency checking,
 #   fetching latest versions from Fedora People Archive, checking running Windows VMs,
-#   comparing versions, managing update notifications via SVG nags in Proxmox UI,
+#   comparing versions, managing update notifications via SVG nags in Proxmox VE UI,
 #   and persisting VM state for tracking updates across runs.
 
 set -euo pipefail
@@ -43,6 +43,8 @@ done
 load_init_state
 
 if [[ "$LOGGER_INITIALIZED" != "true" ]]; then
+
+
   init_logger \
     --log "${LOG_DIR:=$SCRIPT_DIR/logs}/proxmox_virtio_updater.log" \
     --level "${LOG_LEVEL:=info}" \
@@ -55,14 +57,14 @@ if [[ "$LOGGER_INITIALIZED" != "true" ]]; then
 
 fi
 
+# Initialize state directory
+# Don't state handle this either, its a simple if not so there is not much performance lost by this check.
+init_state_dir
+
 # Checks for required dependencies and exits if any are missing
 # Don't ever handly by state! I had the issue that dependencies went missing
 # and the script then broke.
 check_script_dependencies
-
-# Initialize state directory
-# Don't state handle this either, its a simple if not so there is not much performance lost by this check.
-init_state_dir
 
 ##################################################################################
 #                             Check for Updates                                 #
