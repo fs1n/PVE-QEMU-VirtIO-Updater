@@ -44,7 +44,6 @@ load_init_state
 
 if [[ "$LOGGER_INITIALIZED" != "true" ]]; then
 
-
   init_logger \
     --log "${LOG_DIR:=$SCRIPT_DIR/logs}/proxmox_virtio_updater.log" \
     --level "${LOG_LEVEL:=info}" \
