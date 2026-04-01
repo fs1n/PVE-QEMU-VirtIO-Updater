@@ -40,6 +40,10 @@ done
 #                                   Init                                         #
 ##################################################################################
 
+# Initialize state directory first so save_init_state can write to it
+# Don't state handle this either, its a simple if not so there is not much performance lost by this check.
+init_state_dir
+
 load_init_state
 
 if [[ "$LOGGER_INITIALIZED" != "true" ]]; then
@@ -55,10 +59,6 @@ if [[ "$LOGGER_INITIALIZED" != "true" ]]; then
   save_init_state "true"
 
 fi
-
-# Initialize state directory
-# Don't state handle this either, its a simple if not so there is not much performance lost by this check.
-init_state_dir
 
 # Checks for required dependencies and exits if any are missing
 # Don't ever handly by state! I had the issue that dependencies went missing

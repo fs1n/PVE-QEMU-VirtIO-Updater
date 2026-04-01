@@ -325,6 +325,7 @@ function load_init_state() {
     
     if [[ ! -f "$state_file" ]]; then
         export LOGGER_INITIALIZED="false"
+        return 0
     fi
     
     # Initialize variables with defaults
