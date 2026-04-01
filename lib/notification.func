@@ -68,8 +68,77 @@ function notification_email_SMTP() {
     local subject=${1-}
     local body=${2-}
     local content_type="${3:-text/plain}"
-    # Todo: Implement SMTP email notification logic here using "$subject", "$body", and "$content_type"
-    :
+
+    # Validate required configuration
+    if [[ -z "${SMTP_HOST-}" ]] || [[ -z "${MAIL_TO-}" ]]; then
+        echo "Error: SMTP_HOST and MAIL_TO are required" >&2
+        return 1
+    fi
+
+    local smtp_port="${SMTP_PORT:-587}"
+    local smtp_user="${SMTP_USER-}"
+    local smtp_password="${SMTP_PASSWORD-}"
+
+    # Build recipient flags
+    local rcpt_args=()
+    for addr in "${MAIL_TO[@]}"; do
+        rcpt_args+=(--mail-rcpt "$addr")
+    done
+
+    # Build To header
+    local to_header
+    to_header=$(IFS=','; echo "${MAIL_TO[*]}")
+
+    # Protocol and TLS flags are derived from SMTP_PORT using standard IANA assignments:
+    #   25  -> smtp:// + --ssl      (relay; opportunistic STARTTLS)
+    #   587 -> smtp:// + --ssl-reqd (submission; enforce STARTTLS)
+    #   465 -> smtps://             (implicit TLS from first byte)
+    #   *   -> smtp:// + --ssl-reqd (safe fallback)
+    local protocol tls_flag=()
+    case "$smtp_port" in
+        25)
+            protocol="smtp"
+            tls_flag=(--ssl)
+            ;;
+        587)
+            protocol="smtp"
+            tls_flag=(--ssl-reqd)
+            ;;
+        465)
+            protocol="smtps"
+            tls_flag=()
+            ;;
+        *)
+            protocol="smtp"
+            tls_flag=(--ssl-reqd)
+            ;;
+    esac
+
+    # Build authentication flags
+    local auth_flag=()
+    if [[ -n "$smtp_user" && -n "$smtp_password" ]]; then
+        auth_flag=(--user "${smtp_user}:${smtp_password}")
+    fi
+
+    # Send email
+    curl --silent --show-error \
+        --url "${protocol}://${SMTP_HOST}:${smtp_port}" \
+        "${tls_flag[@]}" \
+        "${auth_flag[@]}" \
+        --mail-from "$SMTP_FROM" \
+        "${rcpt_args[@]}" \
+        --upload-file - <<EOF
+From: $SMTP_FROM
+To: $to_header
+Subject: $subject
+Date: $(date -R)
+MIME-Version: 1.0
+Content-Type: ${content_type}; charset="UTF-8"
+
+$body
+EOF
+
+    return $?
 }
 
 # @function notification_email_MSGRAPH
