@@ -40,25 +40,17 @@ done
 #                                   Init                                         #
 ##################################################################################
 
-# Initialize state directory first so save_init_state can write to it
+# Initialize state directory first so state functions can write to it
 # Don't state handle this either, its a simple if not so there is not much performance lost by this check.
 init_state_dir
 
-load_init_state
-
-if [[ "$LOGGER_INITIALIZED" != "true" ]]; then
-
-  init_logger \
-    --log "${LOG_DIR:=$SCRIPT_DIR/logs}/proxmox_virtio_updater.log" \
-    --level "${LOG_LEVEL:=info}" \
-    --format "${LOG_FORMAT:=[%d] [%l] %m}" \
-    --quiet \
-    --journal \
-    --tag "PVE-VirtIO-Updater"
-
-  save_init_state "true"
-
-fi
+init_logger \
+  --log "${LOG_DIR:=$SCRIPT_DIR/logs}/proxmox_virtio_updater.log" \
+  --level "${LOG_LEVEL:=info}" \
+  --format "${LOG_FORMAT:=[%d] [%l] %m}" \
+  --quiet \
+  --journal \
+  --tag "PVE-VirtIO-Updater"
 
 # Checks for required dependencies and exits if any are missing
 # Don't ever handly by state! I had the issue that dependencies went missing

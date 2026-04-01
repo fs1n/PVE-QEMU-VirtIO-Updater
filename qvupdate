@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Function to display the menu
+show_menu() {
+    whiptail --title "PVE-QEMU-VirtIO-Updater" --menu "Choose an option:" 15 60 4 \
+    "1" "Check System Disk Usage" \
+    "2" "View Active Network Connections" \
+    "3" "Display System Uptime" \
+    "4" "Exit" 3>&1 1>&2 2>&3
+}
+
+# Main Logic Loop
+while true; do
+    CHOICE=$(show_menu)
+
+    case $CHOICE in
+        1)
+            # Example of an info box
+            DISK_INFO=$(df -h | grep '^/dev/')
+            whiptail --title "Disk Usage" --msgbox "$DISK_INFO" 15 60
+            ;;
+        2)
+            # Example of a simple message
+            whiptail --title "Network Status" --msgbox "Fetching active connections..." 8 45
+            ss -tuln | whiptail --title "Ports" --scrolltext --msgbox - 15 60
+            ;;
+        3)
+            UPTIME=$(uptime -p)
+            whiptail --title "Uptime" --msgbox "System has been $UPTIME" 8 45
+            ;;
+        4|"")
+            # Exit if user chooses 4 or hits 'Cancel'
+            echo "Exiting script..."
+            exit 0
+            ;;
+        *)
+            whiptail --msgbox "Invalid Option" 8 45
+            ;;
+    esac
+done
