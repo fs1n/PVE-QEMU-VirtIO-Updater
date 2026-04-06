@@ -13,13 +13,21 @@
 #   This script serves as the main entry point for the PVE-QEMU-VirtIO-Updater.
 #   It orchestrates the complete workflow: initialization, dependency checking,
 #   fetching latest versions from Fedora People Archive, checking running Windows VMs,
-#   comparing versions, managing update notifications via SVG nags in Proxmox UI,
+#   comparing versions, managing update notifications via SVG nags in Proxmox VE UI,
 #   and persisting VM state for tracking updates across runs.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
+ENV_FILE="$SCRIPT_DIR/.env"
+
+# Load environment overrides if they exist
+if [[ -f "$ENV_FILE" ]]; then
+  set -o allexport
+  . "$ENV_FILE"
+#   set +o allexport # Currently removed to fix array sourcing issues
+fi
 
 # Source all functions in lib files
 for lib_file in "$LIB_DIR"/*.func; do
@@ -28,17 +36,13 @@ for lib_file in "$LIB_DIR"/*.func; do
   fi
 done
 
-# Load environment overrides if they exist
-ENV_FILE="$SCRIPT_DIR/.env"
-if [[ -f "$ENV_FILE" ]]; then
-  set -o allexport
-  . "$ENV_FILE"
-#   set +o allexport # Currently removed to fix array sourcing issues
-fi
-
 ##################################################################################
 #                                   Init                                         #
 ##################################################################################
+
+# Initialize state directory first so state functions can write to it
+# Don't state handle this either, its a simple if not so there is not much performance lost by this check.
+init_state_dir
 
 init_logger \
   --log "${LOG_DIR:=$SCRIPT_DIR/logs}/proxmox_virtio_updater.log" \
@@ -48,16 +52,16 @@ init_logger \
   --journal \
   --tag "PVE-VirtIO-Updater"
 
+# Checks for required dependencies and exits if any are missing
+# Don't ever handly by state! I had the issue that dependencies went missing
+# and the script then broke.
 check_script_dependencies
-
-# Initialize state directory
-init_state_dir
 
 ##################################################################################
 #                             Check for Updates                                 #
 ##################################################################################
 
-windows_vms_all=$(get_windows_vms)  
+windows_vms_all=$(get_windows_vms)
 windows_vms=$(echo "$windows_vms_all" | jq 'to_entries | map(select(.value.status == "running")) | from_entries')
 
 if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then

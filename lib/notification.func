@@ -29,13 +29,16 @@ function notification_init() {
 
 # @function notification_send
 # @description Routes update notifications to all enabled channels defined in NOTIFICATION_CHANNELS
-# @args subject body
+# @args subject body [content_type]
+#   content_type: MIME type for email channels (default: text/plain). Use "text/html" for HTML bodies.
 # @returns 0 on successful dispatch to all channels (or if no channels are configured)
 # @example
-#   NOTIFICATION_CHANNELS="smtp,webhook" notification_send "Update completed" "All guests are now on the latest VirtIO drivers."
+#   NOTIFICATION_CHANNELS="smtp,webhook" notification_send "Update available" "Plain text body"
+#   NOTIFICATION_CHANNELS="smtp" notification_send "Update available" "<b>HTML body</b>" "text/html"
 function notification_send() {
     local subject=${1-}
     local body=${2-}
+    local content_type="${3:-text/plain}"
 
     # If NOTIFICATION_CHANNELS is unset or empty, do nothing and succeed.
     if [[ -z "${NOTIFICATION_CHANNELS-}" ]]; then
@@ -46,62 +49,110 @@ function notification_send() {
     read -ra CHANNELS <<< "$NOTIFICATION_CHANNELS"
     for channel in "${CHANNELS[@]}"; do
         case "$channel" in
-            smtp) notification_email_SMTP "$subject" "$body" ;;
-            msgraph) notification_email_MSGRAPH "$subject" "$body" ;;
+            smtp) notification_email_SMTP "$subject" "$body" "$content_type" ;;
+            msgraph) notification_email_MSGRAPH "$subject" "$body" "$content_type" ;;
             webhook) notification_webhook "$subject" "$body" ;;
         esac
     done
 }
 
 # @function notification_email_SMTP
-# @description Sends email notification via SMTP (requires SMTP_SERVER, FROM, TO configuration)
-# @args subject body
+# @description Sends email notification via SMTP (requires SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, MAIL_TO, SMTP_TLS_MODE configuration)
+# @args subject body [content_type]
+#   content_type: MIME type (default: text/plain). Use "text/html" for HTML bodies.
 # @returns 0 on success, 1 on failure
 # @example
-#   SMTP_SERVER="mail.example.com" notification_email_SMTP "Update completed" "All guests are now on the latest VirtIO drivers."
+#   notification_email_SMTP "Update completed" "All guests are now on the latest VirtIO drivers."
+#   notification_email_SMTP "Update completed" "<b>HTML body</b>" "text/html"
 function notification_email_SMTP() {
     local subject=${1-}
     local body=${2-}
+    local content_type="${3:-text/plain}"
 
-    # Build one --mail-rcpt flag per recipient
+    # Validate required configuration
+    if [[ -z "${SMTP_HOST-}" ]] || [[ -z "${MAIL_TO-}" ]]; then
+        echo "Error: SMTP_HOST and MAIL_TO are required" >&2
+        return 1
+    fi
+
+    local smtp_port="${SMTP_PORT:-587}"
+    local smtp_user="${SMTP_USER-}"
+    local smtp_password="${SMTP_PASSWORD-}"
+
+    # Build recipient flags
     local rcpt_args=()
     for addr in "${MAIL_TO[@]}"; do
         rcpt_args+=(--mail-rcpt "$addr")
     done
 
-    # Comma-separated list for the To: header
+    # Build To header
     local to_header
     to_header=$(IFS=','; echo "${MAIL_TO[*]}")
 
-    # TLS flag (STARTTLS on port 587; use smtps:// instead for port 465)
-    local tls_flag=()
-    [[ "${SMTP_USE_TLS:-true}" == "true" ]] && tls_flag=(--ssl-reqd)
+    # Protocol and TLS flags are derived from SMTP_PORT using standard IANA assignments:
+    #   25  -> smtp:// + --ssl      (relay; opportunistic STARTTLS)
+    #   587 -> smtp:// + --ssl-reqd (submission; enforce STARTTLS)
+    #   465 -> smtps://             (implicit TLS from first byte)
+    #   *   -> smtp:// + --ssl-reqd (safe fallback)
+    local protocol tls_flag=()
+    case "$smtp_port" in
+        25)
+            protocol="smtp"
+            tls_flag=(--ssl)
+            ;;
+        587)
+            protocol="smtp"
+            tls_flag=(--ssl-reqd)
+            ;;
+        465)
+            protocol="smtps"
+            tls_flag=()
+            ;;
+        *)
+            protocol="smtp"
+            tls_flag=(--ssl-reqd)
+            ;;
+    esac
 
+    # Build authentication flags
+    local auth_flag=()
+    if [[ -n "$smtp_user" && -n "$smtp_password" ]]; then
+        auth_flag=(--user "${smtp_user}:${smtp_password}")
+    fi
+
+    # Send email
     curl --silent --show-error \
-        --url "smtp://${SMTP_HOST}:${SMTP_PORT:-587}" \
+        --url "${protocol}://${SMTP_HOST}:${smtp_port}" \
         "${tls_flag[@]}" \
-        --user "${SMTP_USER}:${SMTP_PASSWORD}" \
+        "${auth_flag[@]}" \
         --mail-from "$SMTP_FROM" \
         "${rcpt_args[@]}" \
         --upload-file - <<EOF
 From: $SMTP_FROM
 To: $to_header
 Subject: $subject
+Date: $(date -R)
+MIME-Version: 1.0
+Content-Type: ${content_type}; charset="UTF-8"
 
 $body
 EOF
+
+    return $?
 }
 
 # @function notification_email_MSGRAPH
 # @description Sends email notification via Microsoft Graph API (requires MSGRAPH_TOKEN, FROM, TO configuration)
-# @args subject body
+# @args subject body [content_type]
+#   content_type: MIME type (default: text/plain). Use "text/html" for HTML bodies.
 # @returns 0 on success, 1 on failure
 # @example
 #   MSGRAPH_TOKEN="Bearer ..." notification_email_MSGRAPH "Update completed" "All guests are now on the latest VirtIO drivers."
 function notification_email_MSGRAPH() {
     local subject=${1-}
     local body=${2-}
-    # Todo: Implement Microsoft Graph email notification logic here using "$subject" and "$body"
+    local content_type="${3:-text/plain}"
+    # Todo: Implement Microsoft Graph email notification logic here using "$subject", "$body", and "$content_type"
     :
 }
 
