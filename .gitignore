@@ -7,3 +7,5 @@ manage.sh
 site/
 CLAUDE.md
 email.txt
+deps/
+AGENTS.md
