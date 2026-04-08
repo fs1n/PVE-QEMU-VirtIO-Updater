@@ -27,7 +27,7 @@ STATE_DIR="${STATE_DIR:-$SCRIPT_DIR/.state}"
 # @returns 0 on success, 1 if directory creation failed
 # @example
 #   init_state_dir
-# Ensure state directory exists (called once at startup in main.sh)
+# Ensure state directory exists (called once at startup in check-vm-updates.sh)
 function init_state_dir() {
     if [[ ! -d "$STATE_DIR" ]]; then
         if ! mkdir -p "$STATE_DIR"; then  
@@ -55,7 +55,7 @@ function get_vm_genid() {
     
     local vmgenid
     # Prefer vmgenid from windows_vms; if missing/null, fall back to an identifier derived from vm_config (ctime+name)
-    # windows_vms is expected to be a global variable containing the JSON of all Windows VMs -> Created in main.sh
+    # windows_vms is expected to be a global variable containing the JSON of all Windows VMs -> Created in check-vm-updates.sh
     vmgenid=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].vmgenid // empty') 
     
     if [[ -z "$vmgenid" || "$vmgenid" == "null" ]]; then

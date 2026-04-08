@@ -6,7 +6,7 @@
 # Date: 2025-01-31
 #
 # Dependencies: curl, jq, sed, awk
-# Environment: N/A (functions exported for use by main.sh)
+# Environment: N/A (functions exported for use by check-vm-updates.sh)
 # Usage: source lib/default.sh
 #
 # Functions:

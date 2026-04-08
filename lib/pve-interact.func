@@ -6,7 +6,7 @@
 # Date: 2025-01-31
 #
 # Dependencies: pvesh, qm, jq, grep
-# Environment: N/A (functions exported for use by main.sh)
+# Environment: N/A (functions exported for use by check-vm-updates.sh)
 # Usage: source lib/pve-interact.sh
 #
 # Functions:
@@ -134,7 +134,13 @@ function update_vm_description_with_update_nag() {
     
     current_description=$(echo "$current_vm_config" | jq -r '.description // empty')
     
-    update_banner='<img src="/pve2/images/update-'$vmid'.svg" alt="VirtIO Update" />'
+    local update_banner
+    if [[ -n "${WEBHOOK_HOST:-}" && -n "${WEBHOOK_SECRET:-}" ]]; then
+        local webhook_url="http://${WEBHOOK_HOST}:${WEBHOOK_PORT:-9000}/hooks/${vmid}?token=${WEBHOOK_SECRET}"
+        update_banner='<a href="'"$webhook_url"'" target="_blank"><img src="/pve2/images/update-'"$vmid"'.svg" alt="VirtIO Update - Click to Update" /></a>'
+    else
+        update_banner='<img src="/pve2/images/update-'"$vmid"'.svg" alt="VirtIO Update" />'
+    fi
     
     # Check if description exists and is not empty
     if [ -z "$current_description" ] || [ "$current_description" = "null" ]; then
@@ -177,8 +183,8 @@ function remove_vm_nag() {
         return 0
     fi
     
-    # Remove the nag banner and separator
-    local new_description=$(echo "$current_description" | sed -E "s|<img src=\"/pve2/images/update-$vmid\.svg\"[^>]*/>(<hr/>)?||g")
+    # Remove the nag banner (handles both plain <img/> and <a><img/></a> forms) and separator
+    local new_description=$(echo "$current_description" | sed -E "s|(<a[^>]*>)?<img src=\"/pve2/images/update-$vmid\.svg\"[^>]*/>(</a>)?(<hr/>)?||g")
     
     # Clean up any leftover empty lines or double separators
     new_description=$(echo "$new_description" | sed -E 's|<hr/>(<hr/>)+|<hr/>|g' | sed -E 's|^<hr/>||' | sed -E 's|<hr/>$||')

@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+#
+# Module: webhook.func (PVE-QEMU-VirtIO-Updater)
+# Description: Manages the adnanh/webhook hooks.json config — adds and removes per-VM hooks,
+#              and restarts the pve-virtio-webhook systemd service when the config changes.
+# Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
+# Date: 2026-04-07
+#
+# Dependencies: jq, systemctl
+# Environment: SCRIPT_DIR, WEBHOOK_SECRET, WEBHOOK_PORT, WEBHOOK_SERVICE
+# Usage: source lib/webhook.func; add_hook 101; remove_hook 101
+#
+# Functions:
+#   - init_hooks_file: Ensure webhook/hooks.json exists as an empty array
+#   - add_hook: Add a webhook hook entry for a VM (idempotent)
+#   - remove_hook: Remove the webhook hook entry for a VM
+#   - reload_webhook_service: Restart the pve-virtio-webhook systemd service
+
+WEBHOOK_HOOKS_FILE="${WEBHOOK_HOOKS_FILE:-${SCRIPT_DIR}/webhook/hooks.json}"
+
+# @function init_hooks_file
+# @description Creates the hooks.json file as an empty array if it does not exist
+# @args None
+# @returns 0 on success, 1 on error
+function init_hooks_file() {
+    local hooks_dir
+    hooks_dir="$(dirname "$WEBHOOK_HOOKS_FILE")"
+
+    if [[ ! -d "$hooks_dir" ]]; then
+        if ! mkdir -p "$hooks_dir"; then
+            log_error "webhook: failed to create directory: $hooks_dir"
+            return 1
+        fi
+    fi
+
+    if [[ ! -f "$WEBHOOK_HOOKS_FILE" ]]; then
+        if ! echo '[]' > "$WEBHOOK_HOOKS_FILE"; then
+            log_error "webhook: failed to create hooks file: $WEBHOOK_HOOKS_FILE"
+            return 1
+        fi
+        log_debug "webhook: created hooks file: $WEBHOOK_HOOKS_FILE"
+    fi
+
+    return 0
+}
+
+# @function add_hook
+# @description Adds a new webhook hook for the specified VM (idempotent — no-op if already present)
+# @args vm_id - The ID of the VM for which to add a hook
+# @returns 0 on success, 1 on error
+# @example
+#   add_hook 101
+function add_hook() {
+    local vm_id="$1"
+
+    if [[ -z "$vm_id" ]]; then
+        log_error "webhook: no VM ID provided to add_hook"
+        return 1
+    fi
+
+    init_hooks_file || return 1
+
+    local hooks_json
+    hooks_json=$(cat "$WEBHOOK_HOOKS_FILE")
+
+    # skip if hook already exists
+    if echo "$hooks_json" | jq -e --arg id "$vm_id" 'any(.[]; .id == $id)' > /dev/null 2>&1; then
+        log_debug "webhook: hook for VM $vm_id already exists, skipping"
+        return 0
+    fi
+
+    local token="${WEBHOOK_SECRET:-changeme}"
+    local execute_command="${SCRIPT_DIR}/vm-update.sh"
+    local response_message
+    response_message=$(cat <<EOF
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Update in Progress</title>
+<style>body{font-family:Inter,-apple-system,sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}
+.card{background:#fff;border-radius:12px;padding:32px 40px;box-shadow:0 10px 25px rgba(0,0,0,.1);border-left:4px solid #4f46e5;max-width:440px;width:100%;text-align:center}
+h2{margin:0 0 8px;color:#1e293b;font-size:1.25rem}p{margin:0;color:#64748b;font-size:.95rem}
+.badge{display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:6px;padding:2px 10px;font-size:.8rem;font-weight:700;margin-bottom:16px}</style>
+</head><body><div class="card">
+<div class="badge">VM #${vm_id}</div>
+<h2>Update Triggered</h2>
+<p>The update script is running for VM ${vm_id}. Check <code>logs/webhook.log</code> for progress.</p>
+</div></body></html>
+EOF
+)
+
+    local new_hook
+    new_hook=$(jq -n \
+        --arg id "$vm_id" \
+        --arg cmd "$execute_command" \
+        --arg dir "$SCRIPT_DIR" \
+        --arg token "$token" \
+        --arg response_msg "$response_message" \
+        '{
+            "id": $id,
+            "execute-command": $cmd,
+            "command-working-directory": $dir,
+            "pass-arguments-to-command": [{"source": "string", "name": $id}],
+            "response-headers": [{"name": "Content-Type", "value": "text/html; charset=utf-8"}],
+            "response-message": $response_msg,
+            "trigger-rule": {
+                "match": {
+                    "type": "value",
+                    "value": $token,
+                    "parameter": {"source": "url", "name": "token"}
+                }
+            }
+        }')
+
+    # Append and write atomically
+    local updated_hooks
+    updated_hooks=$(echo "$hooks_json" | jq --argjson hook "$new_hook" '. + [$hook]')
+
+    local tmp_file="${WEBHOOK_HOOKS_FILE}.tmp"
+    if echo "$updated_hooks" > "$tmp_file" && mv "$tmp_file" "$WEBHOOK_HOOKS_FILE"; then
+        log_info "webhook: added hook for VM $vm_id"
+        reload_webhook_service
+        return 0
+    else
+        rm -f "$tmp_file"
+        log_error "webhook: failed to write hooks file for VM $vm_id"
+        return 1
+    fi
+}
+
+# @function remove_hook
+# @description Removes the webhook hook entry for the specified VM (no-op if not present)
+# @args vm_id - The ID of the VM whose hook should be removed
+# @returns 0 on success, 1 on error
+# @example
+#   remove_hook 101
+function remove_hook() {
+    local vm_id="$1"
+
+    if [[ -z "$vm_id" ]]; then
+        log_error "webhook: no VM ID provided to remove_hook"
+        return 1
+    fi
+
+    init_hooks_file || return 1
+
+    local hooks_json
+    hooks_json=$(cat "$WEBHOOK_HOOKS_FILE")
+
+    # No-op if hook does not exist
+    if ! echo "$hooks_json" | jq -e --arg id "$vm_id" 'any(.[]; .id == $id)' > /dev/null 2>&1; then
+        log_debug "webhook: no hook found for VM $vm_id, skipping removal"
+        return 0
+    fi
+
+    local updated_hooks
+    updated_hooks=$(echo "$hooks_json" | jq --arg id "$vm_id" 'map(select(.id != $id))')
+
+    local tmp_file="${WEBHOOK_HOOKS_FILE}.tmp"
+    if echo "$updated_hooks" > "$tmp_file" && mv "$tmp_file" "$WEBHOOK_HOOKS_FILE"; then
+        log_info "webhook: removed hook for VM $vm_id"
+        reload_webhook_service
+        return 0
+    else
+        rm -f "$tmp_file"
+        log_error "webhook: failed to write hooks file after removing VM $vm_id"
+        return 1
+    fi
+}
+
+# @function reload_webhook_service
+# @description Restarts the pve-virtio-webhook systemd service to reload hooks.json
+# @args None
+# @returns 0 on success or if service is not enabled, 1 on restart failure
+function reload_webhook_service() {
+    local service="${WEBHOOK_SERVICE:-pve-virtio-webhook.service}"
+
+    if ! systemctl is-enabled "$service" &>/dev/null; then
+        log_debug "webhook: $service is not enabled, skipping restart"
+        return 0
+    fi
+
+    if systemctl restart "$service"; then
+        log_info "webhook: restarted $service"
+        return 0
+    else
+        log_warn "webhook: failed to restart $service — hooks.json was updated but service may be stale"
+        return 1
+    fi
+}

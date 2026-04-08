@@ -200,9 +200,9 @@ copy_env_example() {
 set_permissions() {
     print_step "Setting file permissions..."
     
-    # Make main.sh executable
-    chmod +x "$INSTALL_DIR/main.sh"
-    print_success "main.sh is executable"
+    # Make check-vm-updates.sh executable
+    chmod +x "$INSTALL_DIR/check-vm-updates.sh"
+    print_success "check-vm-updates.sh is executable"
     
     # Make lib functions executable
     if [[ -d "$INSTALL_DIR/lib" ]]; then
@@ -214,6 +214,53 @@ set_permissions() {
     mkdir -p "$INSTALL_DIR/logs" "$INSTALL_DIR/.state"
     chmod 755 "$INSTALL_DIR/logs" "$INSTALL_DIR/.state"
     print_success "Log and state directories are ready"
+}
+
+setup_webhook_service() {
+    print_step "Setting up webhook service..."
+
+    # Make scripts executable
+    [[ -f "$INSTALL_DIR/vm-update.sh" ]] && chmod +x "$INSTALL_DIR/vm-update.sh" && \
+        print_success "vm-update.sh is executable"
+    [[ -f "$INSTALL_DIR/deps/webhook/webhook" ]] && chmod +x "$INSTALL_DIR/deps/webhook/webhook" && \
+        print_success "deps/webhook/webhook is executable"
+
+    # Write systemd service unit
+    cat > /etc/systemd/system/pve-virtio-webhook.service << EOF
+[Unit]
+Description=PVE VirtIO Updater Webhook Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${INSTALL_DIR}/deps/webhook/webhook \\
+  -hooks ${INSTALL_DIR}/deps/webhook/hooks.json \\
+  -port 9000 \\
+  -ip 0.0.0.0 \\
+  -verbose
+WorkingDirectory=${INSTALL_DIR}
+Restart=on-failure
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pve-virtio-webhook
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+
+    if [[ -f "$INSTALL_DIR/deps/webhook/webhook" ]]; then
+        systemctl enable --now pve-virtio-webhook.service && \
+            print_success "pve-virtio-webhook.service enabled and started" || \
+            print_warning "Could not start pve-virtio-webhook.service — check 'systemctl status pve-virtio-webhook'"
+    else
+        print_warning "deps/webhook/webhook binary not found — service unit written but not started"
+        print_info "Download the webhook binary and place it at: $INSTALL_DIR/deps/webhook/webhook"
+    fi
+
+    print_info "Configure WEBHOOK_ENABLED, WEBHOOK_HOST, and WEBHOOK_SECRET in $INSTALL_DIR/.env"
 }
 
 check_svg_image_path() {
@@ -311,6 +358,7 @@ main() {
     # Post-installation setup
     set_permissions
     check_svg_image_path
+    setup_webhook_service
     
     # Success message
     print_header "Installation Complete"
@@ -322,12 +370,12 @@ main() {
     echo "   nano $INSTALL_DIR/.env"
     echo ""
     echo "2. Test the installation:"
-    echo "   cd $INSTALL_DIR && ./main.sh"
+    echo "   cd $INSTALL_DIR && ./check-vm-updates.sh"
     echo ""
     echo "3. Set up automatic execution. Choose one:"
     echo ""
     echo "   a) Cron job (runs daily at 2 AM):"
-    echo "      echo '0 2 * * * $INSTALL_DIR/main.sh' | crontab -"
+    echo "      echo '0 2 * * * $INSTALL_DIR/check-vm-updates.sh' | crontab -"
     echo ""
     echo "   b) Systemd timer (more reliable on modern systems):"
     echo "      cat > /etc/systemd/system/pve-virtio-updater.service << 'EOF'"
@@ -338,7 +386,7 @@ main() {
     echo ""
     echo "      [Service]"
     echo "      Type=oneshot"
-    echo "      ExecStart=$INSTALL_DIR/main.sh"
+    echo "      ExecStart=$INSTALL_DIR/check-vm-updates.sh"
     echo "      StandardOutput=journal"
     echo "      StandardError=journal"
     echo "      EOF"
