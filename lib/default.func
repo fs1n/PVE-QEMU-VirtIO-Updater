@@ -48,19 +48,40 @@ function check_script_dependencies() {
 #   latest_ver=$(echo "$version_json" | jq -r '.version')
 fetch_latest_virtio_version() {
     local FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/"
+    local max_retries=3
+    local retry_count=0
+    local archive_page http_code page_content latest_json
 
-    # Use curl and capture status code
-    local archive_page
-    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || {
-        log_error "Failed to fetch Fedora People Archive page"
-    }
+    # Retry logic for network failures
+    while (( retry_count < max_retries )); do
+        # Use curl and capture status code
+        archive_page=$(curl -sS --max-time 10 -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || {
+            log_warn "Failed to fetch Fedora People Archive page (attempt $((retry_count + 1))/$max_retries)"
+            (( retry_count++ ))
+            sleep 2
+            continue
+        }
 
-    local http_code=$(echo "$archive_page" | tail -n1)
-    # Use sed to remove the last line (the http code)
-    local page_content=$(echo "$archive_page" | sed '$d')
+        http_code=$(echo "$archive_page" | tail -n1)
+        # Use sed to remove the last line (the http code)
+        page_content=$(echo "$archive_page" | sed '$d')
 
-    if [ "$http_code" != "200" ]; then
-        log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+        if [ "$http_code" != "200" ]; then
+            log_warn "Failed to access Fedora People Archive. HTTP Status: ${http_code} (attempt $((retry_count + 1))/$max_retries)"
+            (( retry_count++ ))
+            sleep 2
+            continue
+        fi
+
+        # Success, break out of retry loop
+        break
+    done
+
+    # If we exhausted retries and still have no content, log error and return empty
+    if [ -z "$page_content" ]; then
+        log_error "Could not fetch Fedora People Archive after $max_retries attempts"
+        echo '{"version":"","release":""}'
+        return 0
     fi
 
     # Refactored AWK to be compatible with mawk and gawk
@@ -90,7 +111,9 @@ fetch_latest_virtio_version() {
     )
 
     if [ -z "$latest_json" ]; then
-        log_error "Could not find any virtio-win directory versions"
+        log_error "Could not find any virtio-win directory versions in Fedora Archive"
+        echo '{"version":"","release":""}'
+        return 0
     fi
 
     echo "$latest_json"
@@ -105,32 +128,53 @@ fetch_latest_virtio_version() {
 #   latest_qemu=$(echo "$qemu_json" | jq -r '.version')
 fetch_latest_qemu_ga_version() {
     local FEDORA_PEOPLE_ARCHIVE_ROOT_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/"
+    local max_retries=3
+    local retry_count=0
+    local archive_page http_code page_content latest_json
 
-    # Abruf der Seite und des HTTP-Statuscodes
-    local archive_page
-    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || {
-        log_error "Failed to fetch Fedora People Archive page"
-    }
+    # Retry logic for network failures
+    while (( retry_count < max_retries )); do
+        # Fetch the page and capture status code
+        archive_page=$(curl -sS --max-time 10 -w "\n%{http_code}" "${FEDORA_PEOPLE_ARCHIVE_ROOT_URL}") || {
+            log_warn "Failed to fetch Fedora People Archive page (attempt $((retry_count + 1))/$max_retries)"
+            (( retry_count++ ))
+            sleep 2
+            continue
+        }
 
-    local http_code=$(echo "$archive_page" | tail -n1)
-    # Entferne die letzte Zeile (den Statuscode) sicher mit sed
-    local page_content=$(echo "$archive_page" | sed '$d')
+        http_code=$(echo "$archive_page" | tail -n1)
+        # Remove the last line (the status code) safely with sed
+        page_content=$(echo "$archive_page" | sed '$d')
 
-    if [ "$http_code" != "200" ]; then
-        log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+        if [ "$http_code" != "200" ]; then
+            log_warn "Failed to access Fedora People Archive. HTTP Status: ${http_code} (attempt $((retry_count + 1))/$max_retries)"
+            (( retry_count++ ))
+            sleep 2
+            continue
+        fi
+
+        # Success, break out of retry loop
+        break
+    done
+
+    # If we exhausted retries and still have no content, log error and return empty
+    if [ -z "$page_content" ]; then
+        log_error "Could not fetch Fedora People Archive after $max_retries attempts"
+        echo '{"version":"","release":""}'
+        return 0
     fi
 
-    # Extraktion der Version und des Datums
+    # Extract version and date
     latest_json=$(echo "$page_content" | awk '
         /qemu-ga-win-[^"]+\// {
-            # Suche nach dem Versions-String (z.B. qemu-ga-win-9.1.0)
+            # Search for the version string (e.g. qemu-ga-win-9.1.0)
             if (match($0, /qemu-ga-win-[0-9]+\.[0-9]+\.[0-9]+/)) {
                 full_match = substr($0, RSTART, RLENGTH)
-                # Entferne den Präfix, um nur die Version zu behalten
+                # Remove the prefix to keep only the version
                 sub(/qemu-ga-win-/, "", full_match)
                 version = full_match
 
-                # Suche nach dem Datum (YYYY-MM-DD)
+                # Search for the date (YYYY-MM-DD)
                 if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) {
                     date = substr($0, RSTART, RLENGTH)
                     print version " " date
@@ -143,7 +187,9 @@ fetch_latest_qemu_ga_version() {
     )
 
     if [ -z "$latest_json" ]; then
-        log_error "Could not find any qemu-ga-win directory versions"
+        log_error "Could not find any qemu-ga-win directory versions in Fedora Archive"
+        echo '{"version":"","release":""}'
+        return 0
     fi
 
     echo "$latest_json"

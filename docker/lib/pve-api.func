@@ -142,6 +142,62 @@ _pve_api_post() {
     _pve_api_request POST "$path" "$body" | jq '.data'
 }
 
+# @function _pve_api_post_json
+# @description POST to a PVE API path with a JSON body; returns .data.
+# @args path — e.g. /nodes/pve/qemu/100/agent/exec
+#       json_body — raw JSON string
+_pve_api_post_json() {
+    local path="$1"
+    local json_body="$2"
+
+    local base_url="https://${PVE_HOST}:${PVE_PORT:-8006}/api2/json"
+    local auth_header="Authorization: PVEAPIToken=${PVE_API_TOKEN_ID}=${PVE_API_TOKEN_SECRET}"
+    local connect_timeout="${PVE_API_CONNECT_TIMEOUT:-10}"
+    local max_time="${PVE_API_MAX_TIME:-30}"
+
+    local response_file stderr_file http_code curl_exit response_body stderr_body
+    response_file="$(mktemp)"
+    stderr_file="$(mktemp)"
+
+    local curl_args=(
+        -s
+        --fail-with-body
+        --connect-timeout "$connect_timeout"
+        --max-time "$max_time"
+        -X POST
+        -H "$auth_header"
+        -H "Content-Type: application/json"
+        -o "$response_file"
+        -w "%{http_code}"
+        --data "$json_body"
+        "${base_url}${path}"
+    )
+
+    if [[ "${PVE_TLS_INSECURE:-false}" == "true" ]]; then
+        curl_args+=(-k)
+    elif [[ -n "${PVE_CA_BUNDLE:-}" ]]; then
+        curl_args+=(--cacert "$PVE_CA_BUNDLE")
+    fi
+
+    http_code="$(curl "${curl_args[@]}" 2>"$stderr_file")"
+    curl_exit=$?
+    response_body="$(cat "$response_file")"
+    stderr_body="$(cat "$stderr_file")"
+    rm -f "$response_file" "$stderr_file"
+
+    if (( curl_exit != 0 )); then
+        if declare -F log_error >/dev/null 2>&1; then
+            log_error "PVE API request failed: POST ${path} (HTTP ${http_code:-000}): ${response_body:-$stderr_body}"
+        else
+            printf 'ERROR: PVE API request failed: POST %s (HTTP %s): %s\n' \
+                "$path" "${http_code:-000}" "${response_body:-$stderr_body}" >&2
+        fi
+        return 1
+    fi
+
+    printf '%s' "$response_body" | jq '.data'
+}
+
 # @function _pve_node_for_vmid
 # @description Look up the node a VM lives on using the global $windows_vms JSON.
 # @args vmid
@@ -155,7 +211,7 @@ _pve_node_for_vmid() {
 # @description Percent-encode a string for use in POST/PUT bodies.
 # @args value
 _pve_url_encode() {
-    printf '%s' "$1" | curl -Gso /dev/null -w "%{url_effective}" --data-urlencode @- "" | cut -c3-
+    printf '%s' "$1" | curl -Gso /dev/null -w "%{url_effective}" --data-urlencode @- "http://x" | cut -c10-
 }
 
 # ---------------------------------------------------------------------------
@@ -227,12 +283,12 @@ function qm() {
                     local cmd_json
                     cmd_json=$(printf '%s\n' "$@" | jq -R . | jq -s .)
 
-                    # POST exec — body: command=["prog","arg1",...]
+                    # POST exec with JSON body: {"command":["prog","arg1",...],"input-data":""}
                     local exec_body
-                    exec_body="command=$(_pve_url_encode "$cmd_json")&input-data="
+                    exec_body=$(jq -n --argjson command "$cmd_json" '{command: $command, "input-data": ""}')
 
                     local exec_resp
-                    exec_resp=$(_pve_api_post "/nodes/${node}/qemu/${vmid}/agent/exec" "$exec_body")
+                    exec_resp=$(_pve_api_post_json "/nodes/${node}/qemu/${vmid}/agent/exec" "$exec_body")
 
                     local pid
                     pid=$(echo "$exec_resp" | jq -r '.pid // empty')
