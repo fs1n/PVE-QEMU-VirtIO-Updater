@@ -26,6 +26,24 @@ if [[ "${CONTAINER_MODE:-false}" != "true" ]]; then
     return 0
 fi
 
+# Guard: fail early in container mode if required API environment is missing.
+# Use defaulted expansion so this remains safe when the parent script enables `set -u`.
+_pve_required_env=(PVE_HOST PVE_API_TOKEN_ID PVE_API_TOKEN_SECRET)
+_pve_missing_env=()
+_pve_var_name=""
+for _pve_var_name in "${_pve_required_env[@]}"; do
+    if [[ -z "${!_pve_var_name:-}" ]]; then
+        _pve_missing_env+=("$_pve_var_name")
+    fi
+done
+unset _pve_var_name
+if (( ${#_pve_missing_env[@]} > 0 )); then
+    printf 'FATAL: docker/lib/pve-api.func requires the following environment variable(s) in container mode: %s\n' \
+        "${_pve_missing_env[*]}" >&2
+    return 1
+fi
+unset _pve_required_env _pve_missing_env
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -33,6 +51,9 @@ fi
 # @function _pve_api_request
 # @description Core HTTP request against the Proxmox REST API.
 #              Authenticates with PVEAPIToken header.
+#              TLS certificates are verified by default. Set
+#              PVE_TLS_INSECURE=true to explicitly disable verification,
+#              or set PVE_CA_BUNDLE to use a custom CA bundle.
 # @args method  — GET | POST | PUT
 #       path    — API path, e.g. /nodes (without /api2/json prefix)
 #       [body]  — optional URL-encoded body string for POST/PUT
@@ -44,20 +65,53 @@ _pve_api_request() {
 
     local base_url="https://${PVE_HOST}:${PVE_PORT:-8006}/api2/json"
     local auth_header="Authorization: PVEAPIToken=${PVE_API_TOKEN_ID}=${PVE_API_TOKEN_SECRET}"
+    local connect_timeout="${PVE_API_CONNECT_TIMEOUT:-10}"
+    local max_time="${PVE_API_MAX_TIME:-30}"
+
+    local response_file stderr_file http_code curl_exit response_body stderr_body
+    response_file="$(mktemp)"
+    stderr_file="$(mktemp)"
 
     local curl_args=(
-        -s -k
+        -s
+        --fail-with-body
+        --connect-timeout "$connect_timeout"
+        --max-time "$max_time"
         -X "$method"
         -H "$auth_header"
         -H "Content-Type: application/x-www-form-urlencoded"
+        -o "$response_file"
+        -w "%{http_code}"
         "${base_url}${path}"
     )
+
+    if [[ "${PVE_TLS_INSECURE:-false}" == "true" ]]; then
+        curl_args+=(-k)
+    elif [[ -n "${PVE_CA_BUNDLE:-}" ]]; then
+        curl_args+=(--cacert "$PVE_CA_BUNDLE")
+    fi
 
     if [[ -n "$body" ]]; then
         curl_args+=(--data "$body")
     fi
 
-    curl "${curl_args[@]}"
+    http_code="$(curl "${curl_args[@]}" 2>"$stderr_file")"
+    curl_exit=$?
+    response_body="$(cat "$response_file")"
+    stderr_body="$(cat "$stderr_file")"
+    rm -f "$response_file" "$stderr_file"
+
+    if (( curl_exit != 0 )); then
+        if declare -F log_error >/dev/null 2>&1; then
+            log_error "PVE API request failed: ${method} ${path} (HTTP ${http_code:-000}): ${response_body:-$stderr_body}"
+        else
+            printf 'ERROR: PVE API request failed: %s %s (HTTP %s): %s\n' \
+                "$method" "$path" "${http_code:-000}" "${response_body:-$stderr_body}" >&2
+        fi
+        return 1
+    fi
+
+    printf '%s' "$response_body"
 }
 
 # @function _pve_api_get
@@ -230,11 +284,21 @@ function qm() {
             while [[ $# -gt 0 ]]; do
                 case "$1" in
                     -description)
+                        if [[ $# -lt 2 || "$2" == -* ]]; then
+                            log_error "pve-api.func qm shim: missing value for -description"
+                            return 1
+                        fi
                         description="$2"
                         shift 2
                         ;;
+
+                    -*)
+                        log_error "pve-api.func qm shim: unsupported option '$1' for 'qm set'"
+                        return 1
+                        ;;
                     *)
-                        shift
+                        log_error "pve-api.func qm shim: unexpected argument '$1' for 'qm set'"
+                        return 1
                         ;;
                 esac
             done

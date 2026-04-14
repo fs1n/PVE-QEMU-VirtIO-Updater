@@ -37,6 +37,6 @@ RUN chmod +x \
     && chmod +x /app/lib/*.func 2>/dev/null || true
 
 # SVG image server port (Caddy reverse-proxies to this)
-EXPOSE 8080
+# EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]
