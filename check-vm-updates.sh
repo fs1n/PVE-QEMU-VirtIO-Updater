@@ -1,26 +1,30 @@
 #!/usr/bin/env bash
 #
-# Module: main.sh (PVE-QEMU-VirtIO-Updater)
-# Description: Main orchestrator for checking and managing VirtIO and QEMU Guest Agent updates on Proxmox VE Windows VMs
+# Module: check-vm-updates.sh (PVE-QEMU-VirtIO-Updater)
+# Description: Checks VirtIO and QEMU Guest Agent versions on Proxmox VE Windows VMs and manages update nag banners
 # Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
 # Date: 2025-01-31
 #
 # Dependencies: jq, curl, pvesh, qm, sed, awk, grep
 # Environment: LOG_DIR, LOG_LEVEL, LOG_FORMAT, STATE_DIR, SVG_IMAGE_TEMPLATE
-# Usage: ./main.sh (typically run via cron or systemd timer)
+# Usage: ./check-vm-updates.sh [vmid ...]  (optional: limit to specific VM IDs)
+#        Typically run via cron or systemd timer with no arguments.
 #
 # Description:
-#   This script serves as the main entry point for the PVE-QEMU-VirtIO-Updater.
-#   It orchestrates the complete workflow: initialization, dependency checking,
+#   Orchestrates the complete workflow: initialization, dependency checking,
 #   fetching latest versions from Fedora People Archive, checking running Windows VMs,
 #   comparing versions, managing update notifications via SVG nags in Proxmox VE UI,
 #   and persisting VM state for tracking updates across runs.
+#   If VM IDs are passed as arguments, only those VMs are processed.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
 ENV_FILE="$SCRIPT_DIR/.env"
+
+# Optional: specific VM IDs to check (positional args); empty = check all
+TARGET_VMIDS=("$@")
 
 # Load environment overrides if they exist
 if [[ -f "$ENV_FILE" ]]; then
@@ -63,6 +67,14 @@ check_script_dependencies
 
 windows_vms_all=$(get_windows_vms)
 windows_vms=$(echo "$windows_vms_all" | jq 'to_entries | map(select(.value.status == "running")) | from_entries')
+
+# Filter to requested VM IDs if any were specified as arguments
+if [[ ${#TARGET_VMIDS[@]} -gt 0 ]]; then
+    target_filter=$(printf '%s\n' "${TARGET_VMIDS[@]}" | jq -R . | jq -s .)
+    windows_vms=$(echo "$windows_vms" | \
+        jq --argjson ids "$target_filter" \
+           'with_entries(select(.key as $k | ($ids | index($k)) != null))')
+fi
 
 if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then
     log_info "No Windows VMs found on this Proxmox host. Exiting."
@@ -116,6 +128,9 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
         "$QEMU_GA_version" "$CurrentQEMUGAVersion" \
         "$CurrentVirtIORelease" "$CurrentQEMUGARelease" \
         "$vmgenid"
+      if [[ "${WEBHOOK_ENABLED:-false}" == "true" ]]; then
+        add_hook "$vmid"
+      fi
       ;;
     1)
       # No-op: do not modify nag state or artifacts; leave existing nag state as-is
@@ -125,6 +140,9 @@ for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
       # Nag cleared: remove any nag artifacts and persist state
       remove_vm_nag "$node" "$vmid"
       save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "false" "$vmgenid"
+      if [[ "${WEBHOOK_ENABLED:-false}" == "true" ]]; then
+        remove_hook "$vmid"
+      fi
       ;;
     *)
       # Unexpected status: be defensive

@@ -7,5 +7,5 @@ manage.sh
 site/
 CLAUDE.md
 email.txt
-deps/
+.claude/
 AGENTS.md

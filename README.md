@@ -39,7 +39,7 @@ I got tired of manually checking if my Windows VMs on Proxmox had outdated VirtI
 
 ```mermaid
 graph LR
-    A["main.sh<br/>(Cron/Timer)"] -->|load libs| B["lib/default.func<br/>lib/pve-interact.func<br/>lib/state.func<br/>lib/logger.func"]
+    A["check-vm-updates.sh<br/>(Cron/Timer)"] -->|load libs| B["lib/default.func<br/>lib/pve-interact.func<br/>lib/state.func<br/>lib/logger.func"]
     A -->|init| C["Logging<br/>State Dir"]
     A -->|query| D["Proxmox API<br/>pvesh/qm"]
     D -->|VM list<br/>Windows VMs| E["lib/pve-interact.func<br/>get_windows_vms"]
@@ -63,7 +63,7 @@ graph LR
 
 **Workflow:**
 
-1. **Initialization**: `main.sh` sources libraries, initializes logging, creates state directory
+1. **Initialization**: `check-vm-updates.sh` sources libraries, initializes logging, creates state directory
 2. **Dependency Check**: Verify curl, jq, pvesh, qm, sed, awk are available
 3. **VM Discovery**: Query Proxmox API for all Windows VMs on cluster
 4. **Version Fetch**: Download latest VirtIO and QEMU GA versions from Fedora Archive
@@ -153,12 +153,12 @@ nano .env
 
 ### Make scripts executable
 ```bash
-chmod +x main.sh lib/*.func
+chmod +x check-vm-updates.sh lib/*.func
 ```
 
 ### Run manually for testing
 ```bash
-./main.sh
+./check-vm-updates.sh
 ```
 
 # Quick Start / Running
@@ -166,7 +166,7 @@ chmod +x main.sh lib/*.func
 ## Run manually for testing
 ```bash
 cd /opt/pve-qemu-virtio-updater
-./main.sh
+./check-vm-updates.sh
 ```
 
 ## Schedule automatic execution
@@ -176,7 +176,7 @@ Choose one of the following methods to run the updater regularly (e.g., daily):
 ### Option A: Cron Job
 ```bash
 # Runs daily at 2 AM
-echo "0 2 * * * /opt/pve-qemu-virtio-updater/main.sh" | crontab -
+echo "0 2 * * * /opt/pve-qemu-virtio-updater/check-vm-updates.sh" | crontab -
 ```
 
 ### Option B: Systemd Timer (Recommended)
@@ -191,7 +191,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/pve-qemu-virtio-updater/main.sh
+ExecStart=/opt/pve-qemu-virtio-updater/check-vm-updates.sh
 StandardOutput=journal
 StandardError=journal
 EOF
