@@ -134,12 +134,13 @@ function update_vm_description_with_update_nag() {
     
     current_description=$(echo "$current_vm_config" | jq -r '.description // empty')
     
+    local nag_img_base="${NAG_IMAGE_BASE_URL:-/pve2/images}"
     local update_banner
     if [[ -n "${WEBHOOK_HOST:-}" && -n "${WEBHOOK_SECRET:-}" ]]; then
         local webhook_url="http://${WEBHOOK_HOST}:${WEBHOOK_PORT:-9000}/hooks/${vmid}?token=${WEBHOOK_SECRET}"
-        update_banner='<a href="'"$webhook_url"'" target="_blank"><img src="/pve2/images/update-'"$vmid"'.svg" alt="VirtIO Update - Click to Update" /></a>'
+        update_banner='<a href="'"$webhook_url"'" target="_blank"><img src="'"${nag_img_base}"'/update-'"$vmid"'.svg" alt="VirtIO Update - Click to Update" /></a>'
     else
-        update_banner='<img src="/pve2/images/update-'"$vmid"'.svg" alt="VirtIO Update" />'
+        update_banner='<img src="'"${nag_img_base}"'/update-'"$vmid"'.svg" alt="VirtIO Update" />'
     fi
     
     # Check if description exists and is not empty
@@ -183,8 +184,9 @@ function remove_vm_nag() {
         return 0
     fi
     
-    # Remove the nag banner (handles both plain <img/> and <a><img/></a> forms) and separator
-    local new_description=$(echo "$current_description" | sed -E "s|(<a[^>]*>)?<img src=\"/pve2/images/update-$vmid\.svg\"[^>]*/>(</a>)?(<hr/>)?||g")
+    # Remove the nag banner (handles both plain <img/> and <a><img/></a> forms) and separator.
+    # The src pattern matches any base URL so bare-metal and container paths are both handled.
+    local new_description=$(echo "$current_description" | sed -E "s|(<a[^>]*>)?<img src=\"[^\"]*update-$vmid\.svg\"[^>]*/>(</a>)?(<hr/>)?||g")
     
     # Clean up any leftover empty lines or double separators
     new_description=$(echo "$new_description" | sed -E 's|<hr/>(<hr/>)+|<hr/>|g' | sed -E 's|^<hr/>||' | sed -E 's|<hr/>$||')

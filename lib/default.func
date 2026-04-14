@@ -22,7 +22,13 @@
 # @example
 #   check_script_dependencies
 function check_script_dependencies() {
-    local dependencies=( "curl" "jq" "pvesh" "qm" "grep" "sed" "awk" "sort" "whiptail" )
+    local dependencies
+    if [[ "${CONTAINER_MODE:-false}" == "true" ]]; then
+        # pvesh and qm are replaced by pve-api.func shims; whiptail not needed headlessly
+        dependencies=( "curl" "jq" "grep" "sed" "awk" "sort" )
+    else
+        dependencies=( "curl" "jq" "pvesh" "qm" "grep" "sed" "awk" "sort" "whiptail" )
+    fi
     for dep in "${dependencies[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             log_fatal "Error: $dep is not installed."

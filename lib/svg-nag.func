@@ -14,7 +14,7 @@
 #   - build_svg_virtio_update_nag: Create SVG banner for VirtIO updates only
 #   - build_svg_qemu_ga_update_nag: Create SVG banner for QEMU GA updates only
 
-SVG_IMAGE_PATH="/usr/share/pve-manager/images/"
+SVG_IMAGE_PATH="${SVG_IMAGE_PATH:-/usr/share/pve-manager/images/}"
 SVG_IMAGE_TEMPLATE="${SCRIPT_DIR}/templates/svg/update-nag-template.svg"
 SVG_IMAGE_TEMPLATE_BOTH="${SCRIPT_DIR}/templates/svg/update-nag-both-template.svg"
 
