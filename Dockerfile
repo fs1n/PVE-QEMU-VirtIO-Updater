@@ -7,6 +7,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     curl \
+    ca-certificates \
     jq \
     grep \
     sed \
