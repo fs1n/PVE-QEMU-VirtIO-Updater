@@ -3,8 +3,6 @@
 ![Proxmox](https://img.shields.io/badge/proxmox-proxmox?style=for-the-badge&logo=proxmox&logoColor=%23E57000&labelColor=%232b2a33&color=%232b2a33)
 ![Bash Script](https://img.shields.io/badge/bash_script-%23121011.svg?style=for-the-badge&logo=gnu-bash&logoColor=white)
 
-Keep your VirtIO drivers and QEMU Guest Agent up to date on Proxmox VE. Inspired by how vCenter shows "VMware Tools update available"
-
 ## What is this?
 
 I got tired of manually checking if my Windows VMs on Proxmox had outdated VirtIO drivers and QEMU Guest Agent versions. VMware's vCenter does this elegantly with a nice warning in the VM Overview, so I decided to build something similar for Proxmox VE.
@@ -76,28 +74,18 @@ graph LR
    - If VM already up-to-date: remove any existing nag banner
 7. **State Persistence**: Track vmgenid, versions, nag status per VM
 
-## Visual Examples
-
-### Update Banner in Proxmox UI
-
-*Update Banner - Single Component*: SVG banner for VirtIO or QEMU GA update (single component).
-
-*Update Banner - Both Components*: SVG banner when both VirtIO and QEMU GA updates are available.
-
-> **Note:** Screenshots will be added in a future update. Banners appear in the VM Summary/Description area of the Proxmox web UI.
-
 ## Requirements
 
 ### Host Requirements (Proxmox Node)
 
 - Proxmox VE 8.0+ (tested on 8.x and 9.x)
-- Bash 4.0+
+- Bash
 - Required utilities: `jq`, `curl`, `pvesh`, `qm`, `sed`, `awk`, `grep`
 
-### Guest Requirements (Optional - for guest-side updater)
+### Guest Requirements (So the Script can do it's thing)
 
-- Windows 10/11 or Windows Server 2016+ -> I don't have older systems to test on...
-- PowerShell 7.0+
+- Windows 10/11 or Windows Server 2022+ -> I don't have older systems to test on...
+- PowerShell 5xx
 - QEMU Guest Agent installed and running
 
 ## Configuration
@@ -115,25 +103,6 @@ Key configuration options:
 - **Notifications** (not implemented): `NOTIFICATION_CHANNELS`, SMTP/webhook/MS Graph settings
 
 # Installation
-
-## Automated Installation (Recommended)
-
-The easiest way to install and keep the tool updated. Runs as root, handles all setup automatically.
-
-```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/fs1n/PVE-QEMU-VirtIO-Updater/main/install.sh)"
-```
-
-This will:
-- ✓ Install to `/opt/pve-qemu-virtio-updater/`
-- ✓ Backup and preserve existing configuration (`.env`, `.state/`, `logs/`)
-- ✓ Set proper file permissions
-- ✓ Check dependencies
-- ✓ Work for both new installations and updates
-
-## Manual Installation
-
-If you prefer to install manually or modify the installation process:
 
 ### Clone the repository
 ```bash
@@ -173,65 +142,17 @@ cd /opt/pve-qemu-virtio-updater
 
 Choose one of the following methods to run the updater regularly (e.g., daily):
 
-### Option A: Cron Job
+### Cron Job
 ```bash
 # Runs daily at 2 AM
 echo "0 2 * * * /opt/pve-qemu-virtio-updater/check-vm-updates.sh" | crontab -
-```
-
-### Option B: Systemd Timer (Recommended)
-
-Create the service file:
-```bash
-sudo tee /etc/systemd/system/pve-virtio-updater.service > /dev/null << 'EOF'
-[Unit]
-Description=PVE-QEMU-VirtIO-Updater
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/opt/pve-qemu-virtio-updater/check-vm-updates.sh
-StandardOutput=journal
-StandardError=journal
-EOF
-```
-
-Create the timer file:
-```bash
-sudo tee /etc/systemd/system/pve-virtio-updater.timer > /dev/null << 'EOF'
-[Unit]
-Description=Run PVE-QEMU-VirtIO-Updater daily
-Requires=pve-virtio-updater.service
-
-[Timer]
-OnCalendar=daily
-OnCalendar=02:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-```
-
-Enable and start the timer:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now pve-virtio-updater.timer
-```
-
-Check status:
-```bash
-sudo systemctl status pve-virtio-updater.timer
-sudo journalctl -u pve-virtio-updater.service -f
 ```
 
 # Known Limitations
 
 ⚠️ **Current WIP Limitations:**
 
-- **Notification Channels**: SMTP, MS Graph, and webhook integrations are placeholder code only (see `lib/notification.func`)
-- **Self-Update**: `update.sh` is a stub header with no implementation
+- **Notification Channels**: Experimental, view lib/notifications.func to see implementation status.
 - **All Features**: Treat everything as work-in-progress and subject to change
 
 # Roadmap
@@ -239,10 +160,6 @@ sudo journalctl -u pve-virtio-updater.service -f
 > **Note:** These are planned features, not commitments. Timelines are uncertain.
 
 - [ ] **Notification Implementation**: Complete SMTP, webhook, and MS Graph notification channels
-- [ ] **Self-Update Mechanism**: Implement `update.sh` for script auto-updates
-- [ ] **Enhanced Clone Detection**: Improve vmgenid tracking and state validation
-- [ ] **Error Handling**: Better error recovery and logging granularity
-
 
 # License
 
