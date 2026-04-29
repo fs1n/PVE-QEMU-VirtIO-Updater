@@ -1,0 +1,379 @@
+#!/usr/bin/env bash
+#
+# Module: pve-api.func (PVE-QEMU-VirtIO-Updater)
+# Description: Bash function shims for pvesh and qm that call the Proxmox REST API
+#              over HTTPS. Loaded only inside the Docker container (the Dockerfile copies
+#              this file into /app/lib/, where check-vm-updates.sh's glob picks it up).
+#              On bare-metal PVE hosts this file never exists in lib/, so pvesh/qm
+#              system binaries are used as-is without any conditional logic.
+#
+# Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
+# Date: 2026-04-14
+#
+# Dependencies: curl, jq
+# Environment: PVE_HOST, PVE_PORT (default 8006), PVE_API_TOKEN_ID, PVE_API_TOKEN_SECRET,
+#              CONTAINER_MODE (must be "true" for shims to activate)
+# Usage: automatically sourced inside the container — do not source manually on bare metal
+#
+# Functions (all internal — called by their same-named system binary counterparts):
+#   pvesh  — mirrors: pvesh get <path> [--output-format json]
+#   qm     — mirrors: qm guest exec <vmid> -- <cmd> [args...]
+#             and:    qm set <vmid> -description <value>
+
+# Guard: do nothing if not in container mode (shouldn't happen since this file is only
+# present in lib/ inside the container, but belt-and-suspenders).
+if [[ "${CONTAINER_MODE:-false}" != "true" ]]; then
+    return 0
+fi
+
+# Guard: fail early in container mode if required API environment is missing.
+# Use defaulted expansion so this remains safe when the parent script enables `set -u`.
+_pve_required_env=(PVE_HOST PVE_API_TOKEN_ID PVE_API_TOKEN_SECRET)
+_pve_missing_env=()
+_pve_var_name=""
+for _pve_var_name in "${_pve_required_env[@]}"; do
+    if [[ -z "${!_pve_var_name:-}" ]]; then
+        _pve_missing_env+=("$_pve_var_name")
+    fi
+done
+unset _pve_var_name
+if (( ${#_pve_missing_env[@]} > 0 )); then
+    printf 'FATAL: docker/lib/pve-api.func requires the following environment variable(s) in container mode: %s\n' \
+        "${_pve_missing_env[*]}" >&2
+    return 1
+fi
+unset _pve_required_env _pve_missing_env
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+# @function _pve_api_request
+# @description Core HTTP request against the Proxmox REST API.
+#              Authenticates with PVEAPIToken header.
+#              TLS certificates are verified by default. Set
+#              PVE_TLS_INSECURE=true to explicitly disable verification,
+#              or set PVE_CA_BUNDLE to use a custom CA bundle.
+# @args method  — GET | POST | PUT
+#       path    — API path, e.g. /nodes (without /api2/json prefix)
+#       [body]  — optional URL-encoded body string for POST/PUT
+# @returns Raw JSON response from the API (full envelope including "data" key)
+_pve_api_request() {
+    local method="$1"
+    local path="$2"
+    local body="${3:-}"
+
+    local base_url="https://${PVE_HOST}:${PVE_PORT:-8006}/api2/json"
+    local auth_header="Authorization: PVEAPIToken=${PVE_API_TOKEN_ID}=${PVE_API_TOKEN_SECRET}"
+    local connect_timeout="${PVE_API_CONNECT_TIMEOUT:-10}"
+    local max_time="${PVE_API_MAX_TIME:-30}"
+
+    local response_file stderr_file http_code curl_exit response_body stderr_body
+    response_file="$(mktemp)"
+    stderr_file="$(mktemp)"
+
+    local curl_args=(
+        -s
+        --fail-with-body
+        --connect-timeout "$connect_timeout"
+        --max-time "$max_time"
+        -X "$method"
+        -H "$auth_header"
+        -H "Content-Type: application/x-www-form-urlencoded"
+        -o "$response_file"
+        -w "%{http_code}"
+        "${base_url}${path}"
+    )
+
+    if [[ "${PVE_TLS_INSECURE:-false}" == "true" ]]; then
+        curl_args+=(-k)
+    elif [[ -n "${PVE_CA_BUNDLE:-}" ]]; then
+        curl_args+=(--cacert "$PVE_CA_BUNDLE")
+    fi
+
+    if [[ -n "$body" ]]; then
+        curl_args+=(--data "$body")
+    fi
+
+    http_code="$(curl "${curl_args[@]}" 2>"$stderr_file")"
+    curl_exit=$?
+    response_body="$(cat "$response_file")"
+    stderr_body="$(cat "$stderr_file")"
+    rm -f "$response_file" "$stderr_file"
+
+    if (( curl_exit != 0 )); then
+        if declare -F log_error >/dev/null 2>&1; then
+            log_error "PVE API request failed: ${method} ${path} (HTTP ${http_code:-000}): ${response_body:-$stderr_body}"
+        else
+            printf 'ERROR: PVE API request failed: %s %s (HTTP %s): %s\n' \
+                "$method" "$path" "${http_code:-000}" "${response_body:-$stderr_body}" >&2
+        fi
+        return 1
+    fi
+
+    printf '%s' "$response_body"
+}
+
+# @function _pve_api_get
+# @description GET a PVE API path; returns the unwrapped .data value (matches pvesh output).
+# @args path — e.g. /nodes
+_pve_api_get() {
+    local path="$1"
+    _pve_api_request GET "$path" | jq '.data'
+}
+
+# @function _pve_api_put
+# @description PUT to a PVE API path with a URL-encoded body.
+# @args path — e.g. /nodes/pve/qemu/100/config
+#       body — URL-encoded key=value pairs
+_pve_api_put() {
+    local path="$1"
+    local body="$2"
+    _pve_api_request PUT "$path" "$body"
+}
+
+# @function _pve_api_post
+# @description POST to a PVE API path with a URL-encoded body; returns .data.
+# @args path — e.g. /nodes/pve/qemu/100/agent/exec
+#       body — URL-encoded key=value pairs
+_pve_api_post() {
+    local path="$1"
+    local body="$2"
+    _pve_api_request POST "$path" "$body" | jq '.data'
+}
+
+# @function _pve_api_post_json
+# @description POST to a PVE API path with a JSON body; returns .data.
+# @args path — e.g. /nodes/pve/qemu/100/agent/exec
+#       json_body — raw JSON string
+_pve_api_post_json() {
+    local path="$1"
+    local json_body="$2"
+
+    local base_url="https://${PVE_HOST}:${PVE_PORT:-8006}/api2/json"
+    local auth_header="Authorization: PVEAPIToken=${PVE_API_TOKEN_ID}=${PVE_API_TOKEN_SECRET}"
+    local connect_timeout="${PVE_API_CONNECT_TIMEOUT:-10}"
+    local max_time="${PVE_API_MAX_TIME:-30}"
+
+    local response_file stderr_file http_code curl_exit response_body stderr_body
+    response_file="$(mktemp)"
+    stderr_file="$(mktemp)"
+
+    local curl_args=(
+        -s
+        --fail-with-body
+        --connect-timeout "$connect_timeout"
+        --max-time "$max_time"
+        -X POST
+        -H "$auth_header"
+        -H "Content-Type: application/json"
+        -o "$response_file"
+        -w "%{http_code}"
+        --data "$json_body"
+        "${base_url}${path}"
+    )
+
+    if [[ "${PVE_TLS_INSECURE:-false}" == "true" ]]; then
+        curl_args+=(-k)
+    elif [[ -n "${PVE_CA_BUNDLE:-}" ]]; then
+        curl_args+=(--cacert "$PVE_CA_BUNDLE")
+    fi
+
+    http_code="$(curl "${curl_args[@]}" 2>"$stderr_file")"
+    curl_exit=$?
+    response_body="$(cat "$response_file")"
+    stderr_body="$(cat "$stderr_file")"
+    rm -f "$response_file" "$stderr_file"
+
+    if (( curl_exit != 0 )); then
+        if declare -F log_error >/dev/null 2>&1; then
+            log_error "PVE API request failed: POST ${path} (HTTP ${http_code:-000}): ${response_body:-$stderr_body}"
+        else
+            printf 'ERROR: PVE API request failed: POST %s (HTTP %s): %s\n' \
+                "$path" "${http_code:-000}" "${response_body:-$stderr_body}" >&2
+        fi
+        return 1
+    fi
+
+    printf '%s' "$response_body" | jq '.data'
+}
+
+# @function _pve_node_for_vmid
+# @description Look up the node a VM lives on using the global $windows_vms JSON.
+# @args vmid
+# @returns node name string, or empty string if not found
+_pve_node_for_vmid() {
+    local vmid="$1"
+    echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].node // empty'
+}
+
+# @function _pve_url_encode
+# @description Percent-encode a string for use in POST/PUT bodies.
+# @args value
+_pve_url_encode() {
+    printf '%s' "$1" | curl -Gso /dev/null -w "%{url_effective}" --data-urlencode @- "http://x" | cut -c10-
+}
+
+# ---------------------------------------------------------------------------
+# pvesh shim
+# ---------------------------------------------------------------------------
+
+# @function pvesh
+# @description Drop-in replacement for the pvesh CLI when running in a container.
+#              Supports: pvesh get <path> [--output-format json] [ignored flags...]
+#              Outputs unwrapped .data JSON, identical to pvesh --output-format json.
+# @example
+#   pvesh get /nodes --output-format json
+function pvesh() {
+    local subcommand="$1"
+    shift
+
+    case "$subcommand" in
+        get)
+            local path="$1"
+            # Remaining args (e.g., --output-format json) are consumed for compat; output is always JSON
+            _pve_api_get "$path"
+            ;;
+        *)
+            log_error "pve-api.func pvesh shim: unsupported subcommand '$subcommand'"
+            return 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# qm shim
+# ---------------------------------------------------------------------------
+
+# @function qm
+# @description Drop-in replacement for the qm CLI when running in a container.
+#              Supports two call patterns:
+#                qm guest exec <vmid> -- <program> [args...]
+#                qm set <vmid> -description <value>
+#
+#              guest exec: POSTs to /agent/exec, polls /agent/exec-status until
+#              exited=1, then emits {"out-data":"...","err-data":"...","exitcode":N}
+#              — identical shape to real qm guest exec output.
+#
+#              set -description: PUTs the new description to /config.
+# @example
+#   qm guest exec 100 -- powershell.exe -Command 'Get-Date'
+#   qm set 100 -description "my description"
+function qm() {
+    local subcommand="$1"
+    shift
+
+    case "$subcommand" in
+        guest)
+            local guest_subcmd="$1"; shift
+            case "$guest_subcmd" in
+                exec)
+                    local vmid="$1"; shift
+                    # Consume separator "--" if present
+                    [[ "${1:-}" == "--" ]] && shift
+
+                    local node
+                    node=$(_pve_node_for_vmid "$vmid")
+                    if [[ -z "$node" ]]; then
+                        log_error "pve-api.func qm shim: cannot resolve node for vmid $vmid"
+                        return 1
+                    fi
+
+                    # Build JSON array of command + args
+                    local cmd_json
+                    cmd_json=$(printf '%s\n' "$@" | jq -R . | jq -s .)
+
+                    # POST exec with JSON body: {"command":["prog","arg1",...],"input-data":""}
+                    local exec_body
+                    exec_body=$(jq -n --argjson command "$cmd_json" '{command: $command, "input-data": ""}')
+
+                    local exec_resp
+                    exec_resp=$(_pve_api_post_json "/nodes/${node}/qemu/${vmid}/agent/exec" "$exec_body")
+
+                    local pid
+                    pid=$(echo "$exec_resp" | jq -r '.pid // empty')
+                    if [[ -z "$pid" ]]; then
+                        log_error "pve-api.func qm shim: agent/exec did not return a pid"
+                        return 1
+                    fi
+
+                    # Poll exec-status until exited
+                    local max_polls=60
+                    local poll_count=0
+                    local status_resp exited
+
+                    while true; do
+                        sleep 1
+                        status_resp=$(_pve_api_get "/nodes/${node}/qemu/${vmid}/agent/exec-status?pid=${pid}")
+                        exited=$(echo "$status_resp" | jq -r '.exited // 0')
+
+                        if [[ "$exited" == "1" ]]; then
+                            break
+                        fi
+
+                        (( poll_count++ ))
+                        if (( poll_count >= max_polls )); then
+                            log_error "pve-api.func qm shim: guest exec timed out for vmid $vmid"
+                            return 1
+                        fi
+                    done
+
+                    # Emit result in the same shape as real qm guest exec
+                    echo "$status_resp" | jq '{
+                        "out-data": (."out-data" // ""),
+                        "err-data": (."err-data" // ""),
+                        "exitcode": (.exitcode // 0)
+                    }'
+                    ;;
+                *)
+                    log_error "pve-api.func qm shim: unsupported guest subcommand '$guest_subcmd'"
+                    return 1
+                    ;;
+            esac
+            ;;
+
+        set)
+            local vmid="$1"; shift
+
+            # Parse -description <value>
+            local description=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    -description)
+                        if [[ $# -lt 2 || "$2" == -* ]]; then
+                            log_error "pve-api.func qm shim: missing value for -description"
+                            return 1
+                        fi
+                        description="$2"
+                        shift 2
+                        ;;
+
+                    -*)
+                        log_error "pve-api.func qm shim: unsupported option '$1' for 'qm set'"
+                        return 1
+                        ;;
+                    *)
+                        log_error "pve-api.func qm shim: unexpected argument '$1' for 'qm set'"
+                        return 1
+                        ;;
+                esac
+            done
+
+            local node
+            node=$(_pve_node_for_vmid "$vmid")
+            if [[ -z "$node" ]]; then
+                log_error "pve-api.func qm shim: cannot resolve node for vmid $vmid"
+                return 1
+            fi
+
+            local body
+            body="description=$(_pve_url_encode "$description")"
+            _pve_api_put "/nodes/${node}/qemu/${vmid}/config" "$body" > /dev/null
+            ;;
+
+        *)
+            log_error "pve-api.func qm shim: unsupported subcommand '$subcommand'"
+            return 1
+            ;;
+    esac
+}

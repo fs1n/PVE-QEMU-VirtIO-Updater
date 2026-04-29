@@ -1,0 +1,26 @@
+services:
+  updater:
+    build: .
+    container_name: pve-virtio-updater
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./.state:/app/.state
+      - ./logs:/app/logs
+      - ./webhook:/app/webhook
+      - images:/app/images      # shared with caddy
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: pve-virtio-caddy
+    restart: unless-stopped
+    ports:
+      - "${CADDY_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - images:/srv/images:ro   # read the SVGs written by updater
+    depends_on:
+      - updater
+
+volumes:
+  images:

@@ -1,0 +1,24 @@
+# Caddyfile — serves SVG nag images produced by the updater container.
+#
+# Usage:
+#   - Development / LAN:  keep ":80" as-is; access via http://host:8080/update-100.svg
+#   - HTTPS (public):     replace ":80" with your domain name and Caddy will obtain
+#                         a certificate automatically (e.g. "updater.example.com { ... }")
+#
+# Set NAG_IMAGE_BASE_URL=http://<this-host>:8080 in .env so the updater writes
+# that URL into Proxmox VM descriptions.
+
+:80 {
+    root * /srv/images
+    file_server
+    encode gzip
+
+    # Optional: restrict access to the Proxmox subnet only
+    # @proxmox_subnet {
+    #     remote_ip 192.168.1.0/24
+    # }
+    # handle @proxmox_subnet {
+    #     file_server
+    # }
+    # respond 403
+}
