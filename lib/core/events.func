@@ -33,7 +33,7 @@ function ensure_event_log() {
 # @returns 0 on success, 1 on failure
 function emit_event() {
     local event_type="${1:-unknown}"
-    local payload="${2:-{}"
+    local payload="${2:-"{}"}"
 
     # Debug: validate that payload is valid JSON
     if ! jq -e . >/dev/null 2>&1 <<< "$payload"; then
