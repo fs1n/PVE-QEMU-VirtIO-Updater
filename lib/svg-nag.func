@@ -10,8 +10,8 @@
 # Usage: source lib/svg-nag.sh; build_svg_virtio_update_nag vmid current_ver latest_ver date
 #
 # Functions:
-#   - build_svg_update_nag: Create SVG banner for both VirtIO and QEMU GA updates
-#   - build_svg_virtio_update_nag: Create SVG banner for VirtIO updates only
+#   - build_svg_update_nag:         Create SVG banner for both VirtIO and QEMU GA updates
+#   - build_svg_virtio_update_nag:  Create SVG banner for VirtIO updates only
 #   - build_svg_qemu_ga_update_nag: Create SVG banner for QEMU GA updates only
 
 SVG_IMAGE_PATH="/usr/share/pve-manager/images/"
@@ -25,18 +25,18 @@ escape_sed_replacement() {
 
 # @function build_svg_update_nag
 # @description Generates SVG banner showing both VirtIO and QEMU GA update availability
-# @args vmid (string): Proxmox VM ID
-#       vmVirtIOCurrentVersion (string): Currently installed VirtIO version
-#       vmVirtIOLatestVersion (string): Latest available VirtIO version
-#       vmQEMUGACurrentVersion (string): Currently installed QEMU GA version
-#       vmQEMUGALatestVersion (string): Latest available QEMU GA version
-#       virtIOreleaseDate (string): VirtIO release date (YYYY-MM-DD)
-#       qemuGAReleaseDate (string): QEMU GA release date (YYYY-MM-DD)
+# @args vmid                    (string): Proxmox VM ID
+#       vmVirtIOCurrentVersion  (string): Currently installed VirtIO version
+#       vmVirtIOLatestVersion   (string): Latest available VirtIO version
+#       vmQEMUGACurrentVersion  (string): Currently installed QEMU GA version
+#       vmQEMUGALatestVersion   (string): Latest available QEMU GA version
+#       virtIOreleaseDate       (string): VirtIO release date (YYYY-MM-DD)
+#       qemuGAReleaseDate       (string): QEMU GA release date (YYYY-MM-DD)
 # @returns 0 on success, 1 on file operation error; writes SVG to /usr/share/pve-manager/images/update-{vmid}.svg
 # @example
 #   build_svg_update_nag 100 0.1.283 0.1.285 9.0.0 9.1.0 2025-01-15 2025-01-20
 function build_svg_update_nag() {
-    local vmid=$1
+  local vmid=$1
   local vmVirtIOCurrentVersion
   vmVirtIOCurrentVersion="$(escape_sed_replacement "$2")"
   local vmVirtIOLatestVersion

@@ -29,8 +29,8 @@ TARGET_VMIDS=("$@")
 # Load environment overrides if they exist
 if [[ -f "$ENV_FILE" ]]; then
   set -o allexport
+  # shellcheck source=.env
   . "$ENV_FILE"
-#   set +o allexport # Currently removed to fix array sourcing issues
 fi
 
 # Source all functions in lib files

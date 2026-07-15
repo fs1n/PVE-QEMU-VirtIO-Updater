@@ -226,9 +226,9 @@ setup_webhook_service() {
         print_success "deps/webhook/webhook is executable"
 
     # Write systemd service unit
-    cat > /etc/systemd/system/pve-virtio-webhook.service << EOF
+    cat > /etc/systemd/system/pve-updater-webhook.service << EOF
 [Unit]
-Description=PVE VirtIO Updater Webhook Server
+Description=PVE QEMU-GA/VirtIO Updater Webhook Server
 After=network-online.target
 Wants=network-online.target
 
@@ -243,7 +243,7 @@ WorkingDirectory=${INSTALL_DIR}
 Restart=on-failure
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=pve-virtio-webhook
+SyslogIdentifier=pve-updater-webhook
 
 [Install]
 WantedBy=multi-user.target
@@ -252,9 +252,9 @@ EOF
     systemctl daemon-reload
 
     if [[ -f "$INSTALL_DIR/deps/webhook/webhook" ]]; then
-        systemctl enable --now pve-virtio-webhook.service && \
-            print_success "pve-virtio-webhook.service enabled and started" || \
-            print_warning "Could not start pve-virtio-webhook.service — check 'systemctl status pve-virtio-webhook'"
+        systemctl enable --now pve-updater-webhook.service && \
+            print_success "pve-updater-webhook.service enabled and started" || \
+            print_warning "Could not start pve-updater-webhook.service — check 'systemctl status pve-updater-webhook'"
     else
         print_warning "deps/webhook/webhook binary not found — service unit written but not started"
         print_info "Download the webhook binary and place it at: $INSTALL_DIR/deps/webhook/webhook"
@@ -378,7 +378,7 @@ main() {
     echo "      echo '0 2 * * * $INSTALL_DIR/check-vm-updates.sh' | crontab -"
     echo ""
     echo "   b) Systemd timer (more reliable on modern systems):"
-    echo "      cat > /etc/systemd/system/pve-virtio-updater.service << 'EOF'"
+    echo "      cat > /etc/systemd/system/pve-updater.service << 'EOF'"
     echo "      [Unit]"
     echo "      Description=PVE-QEMU-VirtIO-Updater"
     echo "      After=network-online.target"
@@ -391,10 +391,10 @@ main() {
     echo "      StandardError=journal"
     echo "      EOF"
     echo ""
-    echo "      cat > /etc/systemd/system/pve-virtio-updater.timer << 'EOF'"
+    echo "      cat > /etc/systemd/system/pve-updater.timer << 'EOF'"
     echo "      [Unit]"
     echo "      Description=Run PVE-QEMU-VirtIO-Updater daily"
-    echo "      Requires=pve-virtio-updater.service"
+    echo "      Requires=pve-updater.service"
     echo ""
     echo "      [Timer]"
     echo "      OnCalendar=daily"
@@ -406,7 +406,7 @@ main() {
     echo "      EOF"
     echo ""
     echo "      systemctl daemon-reload"
-    echo "      systemctl enable --now pve-virtio-updater.timer"
+    echo "      systemctl enable --now pve-updater.timer"
     echo ""
     echo "Documentation: https://github.com/fs1n/PVE-QEMU-VirtIO-Updater"
     echo ""
