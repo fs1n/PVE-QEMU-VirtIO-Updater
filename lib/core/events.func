@@ -34,6 +34,13 @@ function ensure_event_log() {
 function emit_event() {
     local event_type="${1:-unknown}"
     local payload="${2:-{}}"
+
+    # Debug: validate that payload is valid JSON
+    if ! jq -e . >/dev/null 2>&1 <<< "$payload"; then
+        echo "ERROR: emit_event received invalid JSON payload for type '$event_type': $payload" >&2
+        return 1
+    fi
+
     local event_id
     event_id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s%N)-$$")"
 

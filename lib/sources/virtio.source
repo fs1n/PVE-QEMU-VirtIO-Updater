@@ -12,19 +12,7 @@
 FEDORA_VIRTIO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/"
 FEDORA_QEMU_GA_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/"
 
-# @function check_script_dependencies
-# @description Validates that all required external tools are installed and available in PATH
-function check_script_dependencies() {
-    local dependencies=( "curl" "jq" "pvesh" "qm" "grep" "sed" "awk" "sort" "whiptail" )
-    for dep in "${dependencies[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            log_fatal "Error: $dep is not installed."
-            return 1
-        fi
-    done
-    log_info "All script dependencies are installed."
-    return 0
-}
+# (dependency checking moved to lib/core/utils.func for caching and smarter classification)
 
 # @function fetch_latest_virtio_version
 # @description Fetches the latest available VirtIO driver version from Fedora People Archive
