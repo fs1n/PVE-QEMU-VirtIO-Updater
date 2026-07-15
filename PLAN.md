@@ -1,4 +1,6 @@
-# PVE-VirtIO-Updater Architecture & Modularization Plan
+# PatchMox Architecture & Modularization Plan
+
+> **Project rename in progress.** The repository may still be named `PVE-QEMU-VirtIO-Updater` on GitHub, but the project, CLI, and all runtime identities must use **PatchMox** from now on. See the [Rename checklist](#rename-checklist) for every location that must change.
 
 ## Guiding principle
 
@@ -23,7 +25,7 @@ The key insight: **policies and channels consume events**, they are not wired di
 
 ## Why not a DAG
 
-DAGs solve **execution-order complexity** (e.g. step B needs A and C, D needs B, retry B 3×). PVE-VirtIO-Updater workflows are mostly sequential per VM:
+DAGs solve **execution-order complexity** (e.g. step B needs A and C, D needs B, retry B 3×). PatchMox workflows are mostly sequential per VM:
 
 ```
 detect → decide → notify → optionally act
@@ -34,8 +36,8 @@ The real complexity is **conditional branching** (maintenance window, VM tags, r
 ## Module layout
 
 ```
-pve-virtio-updater/
-├── bin/pve-virtio              # single entry point
+patchmox/
+├── bin/patchmox                # single entry point
 ├── lib/
 │   ├── core/                   # engine: events, policy eval, state, queue
 │   │   ├── events.func         # emit_event, event_log, event_filter
@@ -71,12 +73,12 @@ pve-virtio-updater/
 ## CLI surface
 
 ```bash
-pve-virtio check [--vmid ID]
-pve-virtio notify [--channel smtp]
-pve-virtio worker [--once] [--max-jobs N]
-pve-virtio apply --vmid ID [--component virtio|qemu-ga]
-pve-virtio policy --dry-run [--vmid ID]
-pve-virtio state --vmid ID
+patchmox check [--vmid ID]
+patchmox notify [--channel smtp]
+patchmox worker [--once] [--max-jobs N]
+patchmox apply --vmid ID [--component virtio|qemu-ga]
+patchmox policy --dry-run [--vmid ID]
+patchmox state --vmid ID
 ```
 
 ## Module interface contracts
@@ -183,7 +185,7 @@ Within a node, optionally allow up to `N` parallel VM checks. Use a small Bash w
 
 ## Queue and worker split
 
-The orchestrator (`pve-virtio check`) must **detect and enqueue**, then exit. The actual update execution happens in a separate `pve-virtio worker` process. This separation is critical because:
+The orchestrator (`patchmox check`) must **detect and enqueue**, then exit. The actual update execution happens in a separate `patchmox worker` process. This separation is critical because:
 
 - check and update have different cadences and risk profiles,
 - a failed update must not abort the discovery run,
@@ -220,9 +222,9 @@ queue/
 ### Worker behavior
 
 ```bash
-pve-virtio worker --once      # process one eligible job and exit
-pve-virtio worker --max-jobs 5 # process up to 5 eligible jobs and exit
-pve-virtio worker             # run as daemon, sleep between polls
+patchmox worker --once            # process one eligible job and exit
+patchmox worker --max-jobs 5      # process up to 5 eligible jobs and exit
+patchmox worker                   # run as daemon, sleep between polls
 ```
 
 The worker:
@@ -261,36 +263,104 @@ Benefits:
 
 Default deployment is a **single orchestrator node**. Running on multiple active nodes requires either `flock` on a shared POSIX filesystem or a SQLite WAL-backed state store. This is explicitly out of scope for the first implementation phase; design the queue/state primitives so the storage backend can be swapped later without rewriting consumers.
 
+## Rename checklist
+
+The GitHub repository rename is deferred, but everything **inside** the repository must switch to PatchMox now. Update these locations during the refactoring.
+
+### Project identity
+
+| Old | New |
+|---|---|
+| `PVE-QEMU-VirtIO-Updater` | `PatchMox` |
+| `PVE-VirtIO-Updater` | `PatchMox` |
+| `pve-virtio-updater` (directory/package) | `patchmox` |
+
+### CLI and runtime paths
+
+| Old | New |
+|---|---|
+| `bin/pve-virtio` | `bin/patchmox` |
+| `/opt/pve-qemu-virtio-updater/` | `/opt/patchmox/` |
+| `/opt/pve-virtio-updater/` | `/opt/patchmox/` |
+| `/var/log/pve-virtio-updater/` | `/var/log/patchmox/` |
+
+### systemd units
+
+| Old | New |
+|---|---|
+| `pve-virtio-webhook.service` | `patchmox-webhook.service` |
+| *(new)* check timer | `patchmox-check.timer` |
+| *(new)* check service | `patchmox-check.service` |
+| *(new)* worker service | `patchmox-worker.service` |
+
+### Environment and log identifiers
+
+| Old | New |
+|---|---|
+| `JOURNAL_TAG=PVE-VirtIO-Updater` | `JOURNAL_TAG=PatchMox` |
+| `WEBHOOK_SERVICE=pve-virtio-webhook.service` | `WEBHOOK_SERVICE=patchmox-webhook.service` |
+| Default log file `proxmox_virtio_updater.log` | `patchmox.log` |
+
+### File header / author lines
+
+Update the top-of-file comment in every `.sh` and `.func` file:
+
+```
+# Module: <file> (PatchMox)
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+```
+
+### README, CONTRIBUTING, email templates
+
+- `README.md` title and body: `PVE-QEMU-VirtIO-Updater` → `PatchMox`.
+- `CONTRIBUTING.md`: `PVE-QEMU-VirtIO-Updater` → `PatchMox`.
+- `templates/html/email-template.html`: footer GitHub links and copyright text.
+- Git clone instructions: keep the old GitHub URL until the repo is actually renamed, but add a note that the project name is now PatchMox.
+
+### Code references
+
+- `check-vm-updates.sh`: rename to a thin wrapper `bin/patchmox check`.
+- `vm-update.sh`: rename to `lib/actions/apply-update.action` or a thin wrapper `bin/patchmox apply`.
+- `lib/webhook.func`: default service name and all comments referencing `pve-virtio-webhook.service`.
+- Any remaining string literals in `.env.example`.
+
+### What does NOT change
+
+- Component/source names like `virtio.source`, `windows-update.source`, `template.source` stay descriptive of what they check.
+- The word "VirtIO" in user-facing banners and email templates remains correct because it names the driver package.
+- Function names should be generic where possible (`get_windows_vms`, `build_svg_update_nag`) rather than project-branded.
+
 ## Implementation roadmap
 
-### Phase 1 — Core engine
+### Phase 1 — Core engine and rename
 
 1. Define the canonical event JSON schema.
 2. Introduce `lib/core/events.func` and convert `check-vm-updates.sh` to emit events instead of mutating state directly.
 3. Introduce `lib/core/policy.func` and load ordered policy files from `policies/`.
 4. Introduce `lib/core/queue.func` with `enqueue_job`, `claim_job`, `finish_job`, `fail_job`.
-5. Split detection from action: `pve-virtio check` enqueues, `pve-virtio worker` executes.
+5. Split detection from action: `patchmox check` enqueues, `patchmox worker` executes.
+6. Rename project strings, CLI entrypoint, systemd names, journal tag, and default paths to PatchMox.
 
 ### Phase 2 — Modules
 
-6. Move current VirtIO/QEMU-GA logic into `sources/virtio.source`.
-7. Move SVG/description mutation into `actions/show-nag.action` and `actions/remove-nag.action`.
-8. Move notification logic into `channels/*.channel` with a standard `send_event` interface.
-9. Create `enqueue-update.action` that writes jobs to `queue/pending/` based on policy decisions.
-10. Create `apply-update.action` as a stub that logs the trigger; wire it into the worker.
+7. Move current VirtIO/QEMU-GA logic into `sources/virtio.source`.
+8. Move SVG/description mutation into `actions/show-nag.action` and `actions/remove-nag.action`.
+9. Move notification logic into `channels/*.channel` with a standard `send_event` interface.
+10. Create `enqueue-update.action` that writes jobs to `queue/pending/` based on policy decisions.
+11. Create `apply-update.action` as a stub that logs the trigger; wire it into the worker.
 
 ### Phase 3 — CLI and packaging
 
-11. Create `bin/pve-virtio` with subcommands `check`, `notify`, `worker`, `apply`, `policy`, `state`.
-12. Add systemd service/timer templates for `check` and `worker`.
-13. Deprecate `check-vm-updates.sh` and `vm-update.sh` or make them thin wrappers calling `bin/pve-virtio`.
+12. Create `bin/patchmox` with subcommands `check`, `notify`, `worker`, `apply`, `policy`, `state`.
+13. Add systemd service/timer templates for `patchmox-check` and `patchmox-worker`.
+14. Deprecate `check-vm-updates.sh` and `vm-update.sh` or make them thin wrappers calling `bin/patchmox`.
 
 ### Phase 4 — New features
 
-14. Add `windows-update.source` and `template.source`.
-15. Add policy rules for Windows Updates and template refresh.
-16. Add `refresh-template.action`.
-17. Harden worker retry/backoff and maintenance-window enforcement.
+15. Add `windows-update.source` and `template.source`.
+16. Add policy rules for Windows Updates and template refresh.
+17. Add `refresh-template.action`.
+18. Harden worker retry/backoff and maintenance-window enforcement.
 
 ## Design rules
 
@@ -299,5 +369,6 @@ Default deployment is a **single orchestrator node**. Running on multiple active
 - Every mutation produces an event.
 - Every event is written to the journal before any action is taken.
 - Auto-update must pass all gates; a rejected gate updates `next_attempt_at`, it does not crash.
-- One command surface (`bin/pve-virtio`) over a directory of modules.
+- One command surface (`bin/patchmox`) over a directory of modules.
 - Flat-file state is the default; SQLite-backed state is a future pluggable backend.
+- All project-branded strings inside the repo must read PatchMox; component names stay descriptive.
