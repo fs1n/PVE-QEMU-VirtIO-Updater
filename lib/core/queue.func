@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# Module: queue.func (PatchMox)
+# Description: Filesystem-based job queue primitives for deferred update actions.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: jq, date, mv, rm
+# Environment: SCRIPT_DIR, QUEUE_DIR
+# Usage: source lib/core/queue.func; enqueue_job "{event}" "{decision}"
+
+: "${QUEUE_DIR:=${SCRIPT_DIR}/queue}"
+PATCHMOX_QUEUE_DIR_INITIALIZED="false"
+
+# @function init_queue_dirs
+# @description Ensures the queue subdirectories exist. Idempotent.
+# @returns 0 on success, 1 on error
+function init_queue_dirs() {
+    if [[ "$PATCHMOX_QUEUE_DIR_INITIALIZED" == "true" ]]; then
+        return 0
+    fi
+
+    for sub in pending claimed running done failed; do
+        if [[ ! -d "${QUEUE_DIR}/${sub}" ]]; then
+            mkdir -p "${QUEUE_DIR}/${sub}" 2>/dev/null || {
+                log_error "Cannot create queue directory: ${QUEUE_DIR}/${sub}"
+                return 1
+            }
+        fi
+    done
+
+    PATCHMOX_QUEUE_DIR_INITIALIZED="true"
+}
+
+# @function enqueue_job
+# @description Writes a pending job to the queue. Phase 1 stub: creates the file
+#              but no worker consumes it yet.
+# @args event_json (string): canonical PatchMox event that triggered the job
+#       decision_json (string): policy decision
+# @returns 0 on success, 1 on error
+function enqueue_job() {
+    local event_json="${1:-}"
+    local decision_json="${2:-}"
+
+    init_queue_dirs || return 1
+
+    local job_id
+    job_id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s%N)-$$")"
+
+    local job
+    job=$(jq -n \
+        --arg job_id "$job_id" \
+        --arg queued_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        --argjson event "${event_json:-null}" \
+        --argjson decision "${decision_json:-null}" \
+        '{job_id: $job_id, type: "auto-update", status: "pending", queued_at: $queued_at, attempts: 0, max_attempts: 3, next_attempt_at: $queued_at, event: $event, decision: $decision}')
+
+    local job_file="${QUEUE_DIR}/pending/${job_id}.json"
+    if echo "$job" > "$job_file"; then
+        log_debug "Enqueued job ${job_id}"
+        return 0
+    else
+        log_error "Failed to write pending job: $job_file"
+        return 1
+    fi
+}
+
+# @function claim_job
+# @description Atomically moves the oldest eligible pending job to claimed/.
+#              Phase 1: no-op until worker is implemented.
+function claim_job() {
+    :
+}
+
+# @function finish_job
+# @description Moves a claimed job to done/. Phase 1: no-op.
+function finish_job() {
+    :
+}
+
+# @function fail_job
+# @description Returns a claimed job to pending/ or moves it to failed/. Phase 1: no-op.
+function fail_job() {
+    :
+}

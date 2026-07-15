@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#
+# Module: policy.func (PatchMox)
+# Description: Policy evaluator. Loads ordered policy files and decides what
+#              action, if any, an event is allowed to trigger.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: jq
+# Environment: SCRIPT_DIR, POLICY_DIR
+# Usage: source lib/core/policy.func; load_policies; evaluate_policy '{"type":"update.available","vmid":100}'
+
+POLICY_DIR="${POLICY_DIR:-${SCRIPT_DIR}/policies}"
+PATCHMOX_POLICIES=()
+
+# @function load_policies
+# @description Loads all .policy files from POLICY_DIR in alphabetical order.
+# @returns 0 on success, 1 on failure
+function load_policies() {
+    PATCHMOX_POLICIES=()
+    if [[ ! -d "$POLICY_DIR" ]]; then
+        log_warn "Policy directory not found: $POLICY_DIR"
+        return 1
+    fi
+
+    local policy_file
+    while IFS= read -r -d '' policy_file; do
+        if jq empty "$policy_file" 2>/dev/null; then
+            PATCHMOX_POLICIES+=("$policy_file")
+        else
+            log_warn "Invalid JSON policy file, skipping: $policy_file"
+        fi
+    done < <(find "$POLICY_DIR" -maxdepth 1 -type f -name '*.policy' -print0 | sort -z)
+
+    log_debug "Loaded ${#PATCHMOX_POLICIES[@]} policy file(s) from $POLICY_DIR"
+}
+
+# @function evaluate_policy
+# @description Returns the decision for a given event. In Phase 1 only the
+#              default decision is returned; matching rules will be implemented later.
+# @args event_json (string): canonical PatchMox event
+# @returns JSON decision object on stdout
+function evaluate_policy() {
+    local event_json="${1:-{}}"
+
+    # Phase 1: always default to notify-only, no action.
+    # Later: iterate PATCHMOX_POLICIES, test match rules, return first match.
+    jq -n '{"notify": true, "action": "none", "reason": "default policy"}'
+}

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+# Module: enqueue-update.action (PatchMox)
+# Description: Phase 1 stub. Writes an auto-update job to the queue when the
+#              policy decision requests it. The worker will consume these jobs later.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: queue.func
+# Environment: QUEUE_DIR
+# Usage: source lib/actions/enqueue-update.action; enqueue_update_action "$event" "$decision"
+
+# @function enqueue_update_action
+# @description Enqueues an auto-update job if the policy decision says so.
+# @args event_json (string): canonical PatchMox event
+#       decision_json (string): policy decision
+function enqueue_update_action() {
+    local event_json="${1:-}"
+    local decision_json="${2:-}"
+
+    local action
+    action=$(echo "$decision_json" | jq -r '.action // "none"')
+
+    if [[ "$action" != "auto-update" ]]; then
+        return 0
+    fi
+
+    log_info "Policy requests auto-update; enqueuing job for event."
+    enqueue_job "$event_json" "$decision_json"
+}

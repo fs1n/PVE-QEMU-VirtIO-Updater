@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# Module: _dispatcher.channel (PatchMox)
+# Description: Routes notifications to the enabled channels configured in NOTIFICATION_CHANNELS.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: smtp.channel, msgraph.channel, webhook.channel
+# Environment: NOTIFICATION_CHANNELS
+# Usage: source lib/channels/_dispatcher.channel; notification_send "subject" "body" [content_type]
+
+# @function notification_send
+# @description Dispatches update notifications to all enabled channels.
+function notification_send() {
+    local subject=${1-}
+    local body=${2-}
+    local content_type="${3:-text/plain}"
+
+    if [[ -z "${NOTIFICATION_CHANNELS-}" ]]; then
+        return 0
+    fi
+
+    local IFS=','
+    read -ra CHANNELS <<< "$NOTIFICATION_CHANNELS"
+    for channel in "${CHANNELS[@]}"; do
+        case "$channel" in
+            smtp) channel_send_smtp "$subject" "$body" "$content_type" ;;
+            msgraph) channel_send_msgraph "$subject" "$body" "$content_type" ;;
+            webhook) channel_send_webhook "$subject" "$body" ;;
+            *) log_warn "Unknown notification channel: $channel" ;;
+        esac
+    done
+}

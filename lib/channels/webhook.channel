@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# Module: webhook.channel (PatchMox)
+# Description: Outgoing webhook notification channel (stub for Phase 1).
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: curl
+# Environment: WEBHOOK_URL, WEBHOOK_METHOD, WEBHOOK_HEADERS
+# Usage: source lib/channels/webhook.channel; channel_send_webhook "subject" "body"
+
+# @function channel_send_webhook
+# @description Sends notification via HTTP POST to configured webhook endpoint.
+function channel_send_webhook() {
+    local subject=${1-}
+    local body=${2-}
+
+    if [[ -z "${WEBHOOK_URL-}" ]]; then
+        log_debug "Outgoing webhook URL not configured; skipping"
+        return 0
+    fi
+
+    log_warn "Outgoing webhook channel is not fully implemented (subject: $subject)"
+    return 0
+}

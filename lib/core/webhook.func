@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Module: webhook.func (PVE-QEMU-VirtIO-Updater)
+# Module: webhook.func (PatchMox)
 # Description: Manages the adnanh/webhook hooks.json config — adds and removes per-VM hooks,
-#              and restarts the pve-virtio-webhook systemd service when the config changes.
-# Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
+#              and restarts the patchmox-webhook systemd service when the config changes.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
 # Date: 2026-04-07
 #
 # Dependencies: jq, systemctl
@@ -14,7 +14,7 @@
 #   - init_hooks_file: Ensure webhook/hooks.json exists as an empty array
 #   - add_hook: Add a webhook hook entry for a VM (idempotent)
 #   - remove_hook: Remove the webhook hook entry for a VM
-#   - reload_webhook_service: Restart the pve-virtio-webhook systemd service
+#   - reload_webhook_service: Restart the patchmox-webhook systemd service
 
 WEBHOOK_HOOKS_FILE="${WEBHOOK_HOOKS_FILE:-${SCRIPT_DIR}/webhook/hooks.json}"
 
@@ -166,11 +166,11 @@ function remove_hook() {
 }
 
 # @function reload_webhook_service
-# @description Restarts the pve-virtio-webhook systemd service to reload hooks.json
+# @description Restarts the patchmox-webhook systemd service to reload hooks.json
 # @args None
 # @returns 0 on success or if service is not enabled, 1 on restart failure
 function reload_webhook_service() {
-    local service="${WEBHOOK_SERVICE:-pve-virtio-webhook.service}"
+    local service="${WEBHOOK_SERVICE:-patchmox-webhook.service}"
 
     if ! systemctl is-enabled "$service" &>/dev/null; then
         log_debug "webhook: $service is not enabled, skipping restart"

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 #
-# Module: logger.sh (PVE-QEMU-VirtIO-Updater)
+# Module: logger.func (PatchMox)
 # Description: Reusable logging module with syslog-compatible levels, file/console/journal output, and color support
-# Author: GingerGraham (https://gist.github.com/GingerGraham/99af97eed2cd89cd047a2088947a5405), adapted by PVE-QEMU-VirtIO-Updater
-# Date: 2025-01-31
+# Author: GingerGraham (https://gist.github.com/GingerGraham/99af97eed2cd89cd047a2088947a5405), adapted by PatchMox
+# Date: 2026-07-15
 #
 # Dependencies: date, tput (optional, for color detection), systemd-journalctl (optional)
 # Environment: NO_COLOR, CLICOLOR, CLICOLOR_FORCE, TERM, LOG_LEVEL, LOG_FORMAT
-# Usage: source lib/logger.sh; init_logger [options]; log_info "message"
+# Usage: source lib/logger.func; init_logger [options]; log_info "message"
 #
-# logging.sh - Reusable Bash Logging Module
+# logging.func - Reusable Bash Logging Module
 # 
 # This script provides logging functionality that can be sourced by other scripts
 # 
 # Usage in other scripts:
-#   source /path/to/logging.sh # Ensure that the path is an absolute path
+#   source /path/to/logging.func # Ensure that the path is an absolute path
 #   init_logger [-l|--log FILE] [-q|--quiet] [-v|--verbose] [-d|--level LEVEL] [-f|--format FORMAT] [-j|--journal] [-t|--tag TAG] [--color] [--no-color]
 #
 # Functions provided:
@@ -51,19 +51,21 @@ LOG_LEVEL_DEBUG=7      # Debug information (least severe)
 # Aliases for backward compatibility
 LOG_LEVEL_FATAL=$LOG_LEVEL_EMERGENCY  # Alias for EMERGENCY
 
+: "${SCRIPT_DIR:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
 # Default settings (these can be overridden by init_logger)
-CONSOLE_LOG="true"
-LOG_FILE=""
-VERBOSE="false"
-CURRENT_LOG_LEVEL=$LOG_LEVEL_INFO
-USE_UTC="false" # Set to true to use UTC time in logs
+CONSOLE_LOG="${CONSOLE_LOG:-true}"
+LOG_FILE="${LOG_FILE:-}"
+VERBOSE="${VERBOSE:-false}"
+CURRENT_LOG_LEVEL=${LOG_LEVEL_VALUE:-$LOG_LEVEL_INFO}
+USE_UTC="${USE_UTC:-false}" # Set to true to use UTC time in logs
 
 # Journal logging settings
-USE_JOURNAL="true"
-JOURNAL_TAG=""  # Tag for syslog/journal entries
+USE_JOURNAL="${USE_JOURNAL:-true}"
+JOURNAL_TAG="${JOURNAL_TAG:-PatchMox}"  # Tag for syslog/journal entries
 
 # Color settings
-USE_COLORS="auto"  # Can be "auto", "always", or "never"
+USE_COLORS="${USE_COLORS:-auto}"  # Can be "auto", "always", or "never"
 
 # Default log format
 # Format variables:
@@ -75,7 +77,51 @@ USE_COLORS="auto"  # Can be "auto", "always", or "never"
 # Example:
 #   "[%l] %d [%s] %m" => "[INFO] 2025-03-03 12:34:56 [myscript.sh] Hello world"
 #  "%d %z [%l] [%s] %m" => "2025-03-03 12:34:56 UTC [INFO] [myscript.sh] Hello world"
-LOG_FORMAT="%d [%l] [%s] %m"
+LOG_FORMAT="${LOG_FORMAT:-[%d] [%l] %m}"
+
+PATCHMOX_LOGGER_INITIALIZED="false"
+
+# @function ensure_logger_initialized
+# @description Self-initializes the logger from environment defaults on first log call.
+# @returns 0 on success, 1 on failure
+function ensure_logger_initialized() {
+    if [[ "$PATCHMOX_LOGGER_INITIALIZED" == "true" ]]; then
+        return 0
+    fi
+
+    PATCHMOX_LOGGER_INITIALIZED="true"
+
+    if [[ -n "${BASH_SOURCE[2]:-}" ]]; then
+        SCRIPT_NAME=$(basename "${BASH_SOURCE[2]}")
+    else
+        SCRIPT_NAME="patchmox"
+    fi
+
+    if [[ "$USE_JOURNAL" == "true" ]] && ! check_logger_available; then
+        USE_JOURNAL="false"
+    fi
+
+    if [[ -n "${LOG_FILE:-}" ]]; then
+        local log_dir
+        log_dir=$(dirname "$LOG_FILE")
+        if [[ ! -d "$log_dir" ]]; then
+            mkdir -p "$log_dir" 2>/dev/null || {
+                echo "Error: Cannot create log directory '$log_dir'" >&2
+                LOG_FILE=""
+            }
+        fi
+        if [[ -n "${LOG_FILE:-}" ]]; then
+            touch "$LOG_FILE" 2>/dev/null || {
+                echo "Error: Cannot write to log file '$LOG_FILE'" >&2
+                LOG_FILE=""
+            }
+        fi
+        if [[ -n "${LOG_FILE:-}" && ! -w "$LOG_FILE" ]]; then
+            echo "Error: Log file '$LOG_FILE' is not writable" >&2
+            LOG_FILE=""
+        fi
+    fi
+}
 
 # Function to detect terminal color support
 detect_color_support() {
@@ -607,7 +653,9 @@ log_message() {
     local message="$3"
     local skip_file="${4:-false}"
     local skip_journal="${5:-false}"
-    
+
+    ensure_logger_initialized
+
     # Skip logging if message level is more verbose than current log level
     # With syslog-style levels, HIGHER values are LESS severe (more verbose)
     if [[ "$level_value" -gt "$CURRENT_LOG_LEVEL" ]]; then

@@ -9,3 +9,5 @@ CLAUDE.md
 email.txt
 .claude/
 AGENTS.md
+queue/
+webhook/

@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+#
+# PatchMox — Proxmox VE update orchestrator
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Usage:
+#   patchmox check [--vmid ID]
+#   patchmox notify [--channel smtp]
+#   patchmox worker [--once] [--max-jobs N]
+#   patchmox apply --vmid ID [--component virtio|qemu-ga]
+#   patchmox policy --dry-run [--vmid ID]
+#   patchmox state --vmid ID
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+ENV_FILE="$SCRIPT_DIR/.env"
+
+# Default log file path. Can be changed by setting LOG_FILE="" in .env
+LOG_FILE="${LOG_FILE:-${LOG_DIR:-$SCRIPT_DIR/logs}/patchmox.log}"
+
+# Load environment overrides if they exist
+if [[ -f "$ENV_FILE" ]]; then
+  set -o allexport
+  # shellcheck source=.env
+  . "$ENV_FILE"
+fi
+
+# Source all core modules
+for lib_file in "$LIB_DIR"/core/*.func; do
+  if [[ -f "$lib_file" ]]; then
+    # shellcheck source=/dev/null
+    source "$lib_file"
+  fi
+done
+
+# Source all sources, actions, and channels
+for module in "$LIB_DIR"/sources/*.source "$LIB_DIR"/actions/*.action "$LIB_DIR"/channels/*.channel; do
+  if [[ -f "$module" ]]; then
+    # shellcheck source=/dev/null
+    source "$module"
+  fi
+done
+
+PATCHMOX_CMD="${1:-help}"
+shift || true
+
+function show_help() {
+  cat <<EOF
+PatchMox — Proxmox VE update orchestrator
+
+Usage:
+  patchmox check [--vmid ID]
+  patchmox notify [--channel smtp]
+  patchmox worker [--once] [--max-jobs N]
+  patchmox apply --vmid ID [--component virtio|qemu-ga]
+  patchmox policy --dry-run [--vmid ID]
+  patchmox state --vmid ID
+  patchmox help
+EOF
+}
+
+function cmd_check() {
+  local TARGET_VMIDS=("$@")
+
+  init_state_dir
+  load_policies
+  check_script_dependencies
+
+  local windows_vms_all
+  windows_vms_all=$(get_windows_vms)
+
+  local windows_vms
+  windows_vms=$(echo "$windows_vms_all" | jq 'to_entries | map(select(.value.status == "running")) | from_entries')
+
+  if [[ ${#TARGET_VMIDS[@]} -gt 0 ]]; then
+      local target_filter
+      target_filter=$(printf '%s\n' "${TARGET_VMIDS[@]}" | jq -R . | jq -s .)
+      windows_vms=$(echo "$windows_vms" | \
+          jq --argjson ids "$target_filter" \
+             'with_entries(select(.key as $k | ($ids | index($k)) != null))')
+  fi
+
+  if [[ -z "$windows_vms" || "$windows_vms" == "{}" ]]; then
+      log_info "No Windows VMs found on this Proxmox host. Exiting."
+      exit 0
+  fi
+
+  cleanup_stale_state_files "$windows_vms_all"
+
+  local virtio_info CurrentVirtIOVersion CurrentVirtIORelease
+  virtio_info=$(fetch_latest_virtio_version)
+  CurrentVirtIOVersion=$(echo "$virtio_info" | jq -r '.version')
+  CurrentVirtIORelease=$(echo "$virtio_info" | jq -r '.release')
+
+  local qemu_info CurrentQEMUGAVersion CurrentQEMUGARelease
+  qemu_info=$(fetch_latest_qemu_ga_version)
+  CurrentQEMUGAVersion=$(echo "$qemu_info" | jq -r '.version')
+  CurrentQEMUGARelease=$(echo "$qemu_info" | jq -r '.release')
+
+  emit_event "check.started" "{\"virtio_version\":\"$CurrentVirtIOVersion\",\"qemu_ga_version\":\"$CurrentQEMUGAVersion\"}"
+
+  for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
+    local node
+    node=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].node')
+
+    local vmgenid
+    vmgenid=$(get_vm_genid "$windows_vms" "$node" "$vmid")
+
+    local VirtIO_version QEMU_GA_version
+    VirtIO_version=$(get_windows_virtio_version "$vmid")
+    QEMU_GA_version=$(get_windows_QEMU_GA_version "$vmid")
+
+    local need_virtio=false
+    local need_qemu_ga=false
+
+    if [[ "$VirtIO_version" != "$CurrentVirtIOVersion" ]]; then
+      need_virtio=true
+    fi
+
+    if [[ "$QEMU_GA_version" != "$CurrentQEMUGAVersion" ]]; then
+      need_qemu_ga=true
+    fi
+
+    local event_payload
+    event_payload=$(jq -n \
+      --arg vmid "$vmid" \
+      --arg node "$node" \
+      --arg vmgenid "$vmgenid" \
+      --arg virtio_current "$VirtIO_version" \
+      --arg virtio_latest "$CurrentVirtIOVersion" \
+      --arg qemu_current "$QEMU_GA_version" \
+      --arg qemu_latest "$CurrentQEMUGAVersion" \
+      '{
+        vmid: $vmid,
+        node: $node,
+        vmgenid: $vmgenid,
+        components: [],
+        current: {virtio: $virtio_current, qemu_ga: $qemu_current},
+        latest: {virtio: $virtio_latest, qemu_ga: $qemu_latest}
+      }')
+
+    if [[ "$need_virtio" == true ]]; then
+      event_payload=$(echo "$event_payload" | jq '.components += ["virtio"]')
+    fi
+    if [[ "$need_qemu_ga" == true ]]; then
+      event_payload=$(echo "$event_payload" | jq '.components += ["qemu-ga"]')
+    fi
+
+    emit_event "vm.checked" "$event_payload" >/dev/null
+
+    if [[ "$need_virtio" == true || "$need_qemu_ga" == true ]]; then
+      emit_event "update.available" "$event_payload" >/dev/null
+    fi
+
+    local nag_status
+    if should_show_nag "$vmid" "$VirtIO_version" "$CurrentVirtIOVersion" \
+                       "$QEMU_GA_version" "$CurrentQEMUGAVersion" "$vmgenid"; then
+      nag_status=0
+    else
+      nag_status=$?
+    fi
+
+    local decision
+    decision=$(evaluate_policy "{}")
+
+    case "$nag_status" in
+      0)
+        maybe_show_update_nag \
+          "$node" "$vmid" \
+          "$need_virtio" "$need_qemu_ga" \
+          "$VirtIO_version" "$CurrentVirtIOVersion" \
+          "$QEMU_GA_version" "$CurrentQEMUGAVersion" \
+          "$CurrentVirtIORelease" "$CurrentQEMUGARelease" \
+          "$vmgenid"
+        if [[ "$need_virtio" == true || "$need_qemu_ga" == true ]]; then
+          emit_event "nag.shown" "$event_payload" >/dev/null
+          enqueue_update_action "$event_payload" "$decision"
+        fi
+        if [[ "${WEBHOOK_ENABLED:-false}" == "true" ]]; then
+          add_hook "$vmid"
+        fi
+        ;;
+      1)
+        :
+        ;;
+      2)
+        remove_vm_nag "$node" "$vmid"
+        save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "false" "$vmgenid"
+        emit_event "nag.removed" "$event_payload" >/dev/null
+        if [[ "${WEBHOOK_ENABLED:-false}" == "true" ]]; then
+          remove_hook "$vmid"
+        fi
+        ;;
+      *)
+        log_warn "Unknown nag_status='$nag_status' for VM $vmid; saving state without nag."
+        save_vm_state "$vmid" "$VirtIO_version" "$QEMU_GA_version" "false" "$vmgenid"
+        ;;
+    esac
+  done
+
+  emit_event "check.completed" "{}" >/dev/null
+  log_info "Update check completed."
+}
+
+function cmd_notify() {
+  log_info "Notify command is a Phase 1 stub; no notifications drained yet."
+}
+
+function cmd_worker() {
+  log_info "Worker command is a Phase 1 stub; queue is not yet consumed."
+}
+
+function cmd_apply() {
+  local VM_ID=""
+  local COMPONENT=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --vmid) VM_ID="$2"; shift 2 ;;
+      --component) COMPONENT="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  if [[ -z "$VM_ID" ]]; then
+    echo "ERROR: No VM ID provided" >&2
+    exit 1
+  fi
+
+  log_info "Apply command is a Phase 1 stub for VM $VM_ID (component: ${COMPONENT:-all})."
+}
+
+function cmd_policy() {
+  local DRY_RUN=false
+  local VMID=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) DRY_RUN=true; shift ;;
+      --vmid) VMID="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  load_policies
+
+  local sample_event
+  sample_event=$(jq -n \
+    --arg vmid "${VMID:-100}" \
+    '{type: "update.available", vmid: $vmid, components: ["virtio"]}')
+
+  echo "Loaded ${#PATCHMOX_POLICIES[@]} policy file(s)."
+  echo "Sample event: $sample_event"
+  echo "Decision: $(evaluate_policy "$sample_event")"
+}
+
+function cmd_state() {
+  local VMID=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --vmid) VMID="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  if [[ -z "$VMID" ]]; then
+    echo "ERROR: --vmid is required" >&2
+    exit 1
+  fi
+
+  if load_vm_state "$VMID"; then
+    cat <<EOF
+VM $VMID state:
+  VMGENID=$STORED_VMGENID
+  VIRTIO_VERSION=$STORED_VIRTIO_VERSION
+  QEMU_GA_VERSION=$STORED_QEMU_GA_VERSION
+  NAG_ACTIVE=$STORED_NAG_ACTIVE
+  LAST_CHECKED=$STORED_LAST_CHECKED
+EOF
+  else
+    echo "No state found for VM $VMID"
+    exit 1
+  fi
+}
+
+case "$PATCHMOX_CMD" in
+  check)
+    cmd_check "$@"
+    ;;
+  notify)
+    cmd_notify "$@"
+    ;;
+  worker)
+    cmd_worker "$@"
+    ;;
+  apply)
+    cmd_apply "$@"
+    ;;
+  policy)
+    cmd_policy "$@"
+    ;;
+  state)
+    cmd_state "$@"
+    ;;
+  help|--help|-h)
+    show_help
+    ;;
+  *)
+    echo "Unknown command: $PATCHMOX_CMD" >&2
+    show_help >&2
+    exit 1
+    ;;
+esac

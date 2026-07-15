@@ -1,4 +1,4 @@
-# PVE-QEMU-VirtIO-Updater
+# PatchMox
 
 ![Proxmox](https://img.shields.io/badge/proxmox-proxmox?style=for-the-badge&logo=proxmox&logoColor=%23E57000&labelColor=%232b2a33&color=%232b2a33)
 ![Bash Script](https://img.shields.io/badge/bash_script-%23121011.svg?style=for-the-badge&logo=gnu-bash&logoColor=white)
@@ -7,7 +7,7 @@
 
 I got tired of manually checking if my Windows VMs on Proxmox had outdated VirtIO drivers and QEMU Guest Agent versions. VMware's vCenter does this elegantly with a nice warning in the VM Overview, so I decided to build something similar for Proxmox VE.
 
-**PVE-QEMU-VirtIO-Updater** is a host-side monitoring system that:
+**PatchMox** is a host-side monitoring system that:
 
 - **Discovers Windows VMs** on your Proxmox cluster automatically
 - **Detects installed versions** of VirtIO drivers and QEMU Guest Agent via QEMU Guest Agent queries
@@ -37,31 +37,31 @@ I got tired of manually checking if my Windows VMs on Proxmox had outdated VirtI
 
 ```mermaid
 graph LR
-    A["check-vm-updates.sh<br/>(Cron/Timer)"] -->|load libs| B["lib/default.func<br/>lib/pve-interact.func<br/>lib/state.func<br/>lib/logger.func"]
+    A["bin/patchmox check<br/>(Cron/Timer)"] -->|load modules| B["lib/core/*<br/>lib/sources/*<br/>lib/actions/*<br/>lib/channels/*"]
     A -->|init| C["Logging<br/>State Dir"]
     A -->|query| D["Proxmox API<br/>pvesh/qm"]
-    D -->|VM list<br/>Windows VMs| E["lib/pve-interact.func<br/>get_windows_vms"]
+    D -->|VM list<br/>Windows VMs| E["lib/sources/virtio.source<br/>get_windows_vms"]
     E -->|guest exec| F["Windows VM<br/>QEMU Guest Agent"]
     F -->|version info| E
     E -->|current versions| A
     A -->|fetch| G["Fedora Archive<br/>VirtIO/QEMU GA"]
     G -->|latest versions| A
     A -->|compare versions| H["Version Logic"]
-    H -->|check state| I["lib/state.func<br/>.state files"]
+    H -->|check state| I["lib/core/state.func<br/>.state files"]
     I -->|load history| H
     H -->|updates needed?| J{"Show Nag?"}
-    J -->|yes| K["lib/svg-nag.func<br/>render SVG"]
+    J -->|yes| K["lib/actions/show-nag.action<br/>render SVG"]
     K -->|write| L["/usr/share/pve-manager/images/<br/>update-VMID.svg"]
     K -->|link in desc| A
     A -->|update description| D
     D -->|UI displays banner| M["Proxmox UI<br/>VM Description"]
     A -->|persist state| I
-    A -->|notify| N["lib/notification.func<br/>SMTP/Webhook/Graph"]
+    A -->|notify| N["lib/channels/*<br/>SMTP/Webhook/Graph"]
 ```
 
 **Workflow:**
 
-1. **Initialization**: `check-vm-updates.sh` sources libraries, initializes logging, creates state directory
+1. **Initialization**: `bin/patchmox check` sources libraries, initializes logging, creates state directory
 2. **Dependency Check**: Verify curl, jq, pvesh, qm, sed, awk are available
 3. **VM Discovery**: Query Proxmox API for all Windows VMs on cluster
 4. **Version Fetch**: Download latest VirtIO and QEMU GA versions from Fedora Archive
@@ -104,48 +104,83 @@ Key configuration options:
 
 # Installation
 
-### Clone the repository
-```bash
-git clone https://github.com/fs1n/PVE-QEMU-VirtIO-Updater.git
-cd PVE-QEMU-VirtIO-Updater
-```
+You can run PatchMox from the cloned directory for testing, but for production use it should be installed under `/opt/patchmox`.
 
-### Create configuration
+### Quick test (from the repo directory)
 ```bash
+git clone https://github.com/fs1n/PVE-QEMU-VirtIO-Updater.git PatchMox
+cd PatchMox
 cp .env.example .env
+chmod +x bin/patchmox check-vm-updates.sh vm-update.sh
+./bin/patchmox check
 ```
 
-### Edit configuration (optional - defaults work for most setups)
-```bash
-nano .env
-```
+### Recommended install location
 
-### Make scripts executable
-```bash
-chmod +x check-vm-updates.sh lib/*.func
-```
+For production use, install PatchMox under `/opt` and add the CLI to your PATH.
 
-### Run manually for testing
 ```bash
-./check-vm-updates.sh
-```
+# 1. Clone to /opt
+sudo git clone https://github.com/fs1n/PatchMox.git /opt/patchmox
+cd /opt/patchmox
 
-# Quick Start / Running
+# 2. Create your config
+sudo cp .env.example .env
+sudo nano .env
 
-## Run manually for testing
-```bash
-cd /opt/pve-qemu-virtio-updater
-./check-vm-updates.sh
+# 3. Make the CLI executable
+sudo chmod +x bin/patchmox check-vm-updates.sh vm-update.sh
+
+# 4. Link the CLI into /usr/local/bin so it is available system-wide
+sudo ln -sf /opt/patchmox/bin/patchmox /usr/local/bin/patchmox
+
+# 5. Test it
+patchmox check
 ```
 
 ## Schedule automatic execution
 
-Choose one of the following methods to run the updater regularly (e.g., daily):
+Choose one of the following methods to run the check regularly (e.g., daily).
 
 ### Cron Job
 ```bash
 # Runs daily at 2 AM
-echo "0 2 * * * /opt/pve-qemu-virtio-updater/check-vm-updates.sh" | crontab -
+sudo crontab -e
+# Add:
+0 2 * * * /opt/patchmox/bin/patchmox check
+```
+
+### Systemd timer (recommended)
+
+Create `/etc/systemd/system/patchmox-check.service`:
+```ini
+[Unit]
+Description=PatchMox update check
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/patchmox/bin/patchmox check
+WorkingDirectory=/opt/patchmox
+```
+
+Create `/etc/systemd/system/patchmox-check.timer`:
+```ini
+[Unit]
+Description=Run PatchMox update check daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Then enable and start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now patchmox-check.timer
 ```
 
 # Known Limitations

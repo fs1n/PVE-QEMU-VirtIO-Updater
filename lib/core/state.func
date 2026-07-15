@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Module: state.sh (PVE-QEMU-VirtIO-Updater)
+# Module: state.func (PatchMox)
 # Description: VM state management for tracking update status, version history, and VM identity across runs, also keeps track of script state like init_logger so it won't init all the time.
-# Author: Frederik S. (fs1n) and PVE-QEMU-VirtIO-Updater Contributors
-# Date: 2025-01-31
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
 #
 # Dependencies: grep, sed, jq
 # Environment: STATE_DIR, SCRIPT_DIR
-# Usage: source lib/state.sh; init_state_dir; save_vm_state vmid version1 version2 nag_shown vmgenid; load_vm_state vmid; should_show_nag vmid current_virtio latest_virtio current_qemu_ga latest_qemu_ga current_vmgenid; cleanup_stale_state_files windows_vms; save_init_state "true"; load_init_state
+# Usage: source lib/core/state.func; init_state_dir; save_vm_state vmid version1 version2 nag_shown vmgenid; load_vm_state vmid; should_show_nag vmid current_virtio latest_virtio current_qemu_ga latest_qemu_ga current_vmgenid; cleanup_stale_state_files windows_vms; save_init_state "true"; load_init_state
 #
 # Functions:
 #   - init_state_dir: Create state directory if needed
@@ -19,26 +19,33 @@
 #   - save_init_state: Save state of script initialization steps
 #   - load_init_state: Load init state from file and export as environment variables
 
-STATE_DIR="${STATE_DIR:-$SCRIPT_DIR/.state}"
+: "${STATE_DIR:=${SCRIPT_DIR}/.state}"
+PATCHMOX_STATE_DIR_INITIALIZED="false"
+
+# @function ensure_state_dir
+# @description Creates the state directory if it does not exist. Idempotent.
+# @returns 0 on success, 1 on error
+function ensure_state_dir() {
+    if [[ "$PATCHMOX_STATE_DIR_INITIALIZED" == "true" ]]; then
+        return 0
+    fi
+
+    if [[ ! -d "$STATE_DIR" ]]; then
+        if ! mkdir -p "$STATE_DIR" 2>/dev/null; then
+            echo "ERROR: Failed to create state directory: $STATE_DIR" >&2
+            return 1
+        fi
+    fi
+
+    PATCHMOX_STATE_DIR_INITIALIZED="true"
+    return 0
+}
 
 # @function init_state_dir
-# @description Creates the state directory if it does not exist; called once at startup
-# @args None
-# @returns 0 on success, 1 if directory creation failed
-# @example
-#   init_state_dir
-# Ensure state directory exists (called once at startup in check-vm-updates.sh)
+# @description Legacy wrapper for ensure_state_dir. Kept for compatibility.
+# @returns - view upstream func for @returns
 function init_state_dir() {
-    if [[ ! -d "$STATE_DIR" ]]; then
-        if ! mkdir -p "$STATE_DIR"; then  
-            log_error "Failed to create state directory: $STATE_DIR"
-            # echo "ERROR: Failed to create state directory: $STATE_DIR" >&2
-            return 1  
-        fi
-        log_debug "Created state directory: $STATE_DIR"
-        # echo "DEBUG: Created state directory: $STATE_DIR" >&2
-    fi
-    return 0
+    ensure_state_dir
 }
 
 # @function get_vm_genid
@@ -85,6 +92,8 @@ function get_vm_genid() {
 #   save_vm_state 100 "0.1.283" "9.0.0" "true" "$vmgenid"
 # Save current VM state with identity tracking
 function save_vm_state() {
+    ensure_state_dir || return 1
+
     local vmid=$1
     local virtio_ver=$2
     local qemu_ga_ver=$3
@@ -264,18 +273,16 @@ function should_show_nag() {
 #   cleanup_stale_state_files "$windows_vms"
 # Clean up state files for VMs that no longer exist
 function cleanup_stale_state_files() {
+    ensure_state_dir || return 0
+
     local active_vmids=$1  # JSON object with VM IDs as keys
-    
-    if [[ ! -d "$STATE_DIR" ]]; then
-        return 0
-    fi
-    
+
     shopt -s nullglob
 
-    for state_file in "$STATE_DIR"/vm-*.state; do        
+    for state_file in "$STATE_DIR"/vm-*.state; do
         # Extract VMID from filename
         local vmid=$(basename "$state_file" | sed -E 's/vm-([0-9]+)\.state/\1/')
-        
+
         # Check if VM still exists
         if ! echo "$active_vmids" | jq -e ".\"$vmid\"" > /dev/null 2>&1; then
             log_info "Removing stale state file for non-existent VM $vmid"

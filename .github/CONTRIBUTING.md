@@ -1,7 +1,7 @@
 
 # Contributing
 
-Thank you for your interest in contributing to PVE-QEMU-VirtIO-Updater!
+Thank you for your interest in contributing to PatchMox!
 
 ## Getting Started
 

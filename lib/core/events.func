@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+#
+# Module: events.func (PatchMox)
+# Description: Event bus primitives for PatchMox. Emits canonical JSON events
+#              and appends them to an append-only event journal.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: jq, date
+# Environment: SCRIPT_DIR, STATE_DIR
+# Usage: source lib/core/events.func; emit_event "update.available" '{"vmid":100}'
+
+EVENT_LOG_DIR="${EVENT_LOG_DIR:-${STATE_DIR:-${SCRIPT_DIR}/.state}}"
+EVENT_LOG_FILE="${EVENT_LOG_FILE:-${EVENT_LOG_DIR}/events.log}"
+
+# @function ensure_event_log
+# @description Creates the event log directory and file if they do not exist..
+# @returns 0 on success, 1 on failure
+function ensure_event_log() {
+    if [[ ! -d "$EVENT_LOG_DIR" ]]; then
+        mkdir -p "$EVENT_LOG_DIR" || {
+            echo "ERROR: cannot create event log directory: $EVENT_LOG_DIR" >&2
+            return 1
+        }
+    fi
+    touch "$EVENT_LOG_FILE" 2>/dev/null || true
+}
+
+# @function emit_event
+# @description Emits a canonical JSON event to stdout and appends it to the event journal.
+# @args event_type (string): event type, e.g. "update.available"
+#       payload (string): JSON object with event-specific fields
+# @returns 0 on success, 1 on failure
+function emit_event() {
+    local event_type="${1:-unknown}"
+    local payload="${2:-{}}"
+    local event_id
+    event_id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s%N)-$$")"
+
+    local event
+    event=$(jq -n \
+        --arg event_id "$event_id" \
+        --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        --arg type "$event_type" \
+        --argjson payload "$payload" \
+        '{event_id: $event_id, timestamp: $timestamp, type: $type, payload: $payload}')
+
+    ensure_event_log
+    echo "$event" | tee -a "$EVENT_LOG_FILE" 2>/dev/null
+}
+
+# @function event_log
+# @description Appends a pre-built JSON event to the journal without printing it.
+# @args event_json (string): complete JSON event object
+# @returns 0 on success, 1 on failure
+function event_log() {
+    local event_json="${1:-}"
+    if [[ -z "$event_json" ]]; then
+        return 0
+    fi
+    ensure_event_log
+    echo "$event_json" >> "$EVENT_LOG_FILE" 2>/dev/null || true
+}
