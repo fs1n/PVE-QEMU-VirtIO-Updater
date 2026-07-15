@@ -154,15 +154,31 @@ function get_windows_vms() {
     echo "$json_output"
 }
 
+# @function _sanitize_version_string
+# @description Strips whitespace and control characters from a guest-agent version string.
+#              Returns empty if the result does not look like a dotted version.
+# @args raw (string): raw version string from guest agent
+function _sanitize_version_string() {
+    local raw="$1"
+    local cleaned
+    cleaned=$(echo "$raw" | tr -d '\r\n\t' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+    if [[ "$cleaned" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+        echo "$cleaned"
+    else
+        echo ""
+    fi
+}
+
 # @function get_windows_virtio_version
 # @description Query VirtIO driver version installed in a Windows VM via QEMU Guest Agent
 # @args vmid (string): Proxmox VM ID
 # @returns String containing version, empty string if not found or error
 function get_windows_virtio_version() {
     local vmid=$1
-    local version
-    version=$(qm guest exec "$vmid" -- powershell.exe -Command 'Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object { $_.DisplayName } | Where-Object { $_.DisplayName -like "*virtio*installer*" } | Select-Object -ExpandProperty DisplayVersion' 2>/dev/null | jq -r '.["out-data"]' | tr -d '\r\n')
-    echo "$version"
+    local raw_version
+    raw_version=$(qm guest exec "$vmid" -- powershell.exe -Command 'Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object { $_.DisplayName } | Where-Object { $_.DisplayName -like "*virtio*installer*" } | Select-Object -ExpandProperty DisplayVersion' 2>/dev/null | jq -r '.["out-data"] // empty')
+    _sanitize_version_string "$raw_version"
 }
 
 # @function get_windows_QEMU_GA_version
@@ -171,9 +187,9 @@ function get_windows_virtio_version() {
 # @returns String containing version, empty string if not found or error
 function get_windows_QEMU_GA_version() {
     local vmid=$1
-    local version
-    version=$(qm guest exec "$vmid" -- powershell.exe -Command "\$qemuPaths = @('C:\\Program Files\\Qemu-ga\\qemu-ga.exe', 'C:\\Program Files (x86)\\Qemu-ga\\qemu-ga.exe'); foreach (\$path in \$qemuPaths) { if (Test-Path \$path) { (Get-Item \$path).VersionInfo.FileVersion } }" 2>/dev/null | jq -r '.["out-data"]' | tr -d '\r\n')
-    echo "$version"
+    local raw_version
+    raw_version=$(qm guest exec "$vmid" -- powershell.exe -Command "\$qemuPaths = @('C:\\Program Files\\Qemu-ga\\qemu-ga.exe', 'C:\\Program Files (x86)\\Qemu-ga\\qemu-ga.exe'); foreach (\$path in \$qemuPaths) { if (Test-Path \$path) { (Get-Item \$path).VersionInfo.FileVersion } }" 2>/dev/null | jq -r '.["out-data"] // empty')
+    _sanitize_version_string "$raw_version"
 }
 
 # @function get_vm_genid

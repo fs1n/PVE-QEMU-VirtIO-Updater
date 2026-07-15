@@ -102,7 +102,12 @@ function cmd_check() {
   CurrentQEMUGAVersion=$(echo "$qemu_info" | jq -r '.version')
   CurrentQEMUGARelease=$(echo "$qemu_info" | jq -r '.release')
 
-  emit_event "check.started" "{\"virtio_version\":\"$CurrentVirtIOVersion\",\"qemu_ga_version\":\"$CurrentQEMUGAVersion\"}"
+  local check_started_payload
+  check_started_payload=$(jq -n \
+      --arg virtio_version "$CurrentVirtIOVersion" \
+      --arg qemu_ga_version "$CurrentQEMUGAVersion" \
+      '{virtio_version: $virtio_version, qemu_ga_version: $qemu_ga_version}')
+  emit_event "check.started" "$check_started_payload"
 
   for vmid in $(echo "$windows_vms" | jq -r 'keys[]'); do
     local node
@@ -126,6 +131,14 @@ function cmd_check() {
       need_qemu_ga=true
     fi
 
+    local components=()
+    if [[ "$need_virtio" == true ]]; then
+      components+=("virtio")
+    fi
+    if [[ "$need_qemu_ga" == true ]]; then
+      components+=("qemu-ga")
+    fi
+
     local event_payload
     event_payload=$(jq -n \
       --arg vmid "$vmid" \
@@ -135,25 +148,19 @@ function cmd_check() {
       --arg virtio_latest "$CurrentVirtIOVersion" \
       --arg qemu_current "$QEMU_GA_version" \
       --arg qemu_latest "$CurrentQEMUGAVersion" \
+      --argjson components "$(printf '%s\n' "${components[@]}" | jq -R . | jq -s .)" \
       '{
         vmid: $vmid,
         node: $node,
         vmgenid: $vmgenid,
-        components: [],
+        components: $components,
         current: {virtio: $virtio_current, qemu_ga: $qemu_current},
         latest: {virtio: $virtio_latest, qemu_ga: $qemu_latest}
       }')
 
-    if [[ "$need_virtio" == true ]]; then
-      event_payload=$(echo "$event_payload" | jq '.components += ["virtio"]')
-    fi
-    if [[ "$need_qemu_ga" == true ]]; then
-      event_payload=$(echo "$event_payload" | jq '.components += ["qemu-ga"]')
-    fi
-
     emit_event "vm.checked" "$event_payload" >/dev/null
 
-    if [[ "$need_virtio" == true || "$need_qemu_ga" == true ]]; then
+    if [[ ${#components[@]} -gt 0 ]]; then
       emit_event "update.available" "$event_payload" >/dev/null
     fi
 
