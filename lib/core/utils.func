@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#
+# Module: utils.func (PatchMox)
+# Description: Shared utilities, including dependency checks with result caching.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: date, command
+# Environment: SCRIPT_DIR, STATE_DIR
+# Usage: source lib/core/utils.func; check_script_dependencies
+
+PATCHMOX_DEPS_CACHE_FILE="${STATE_DIR:-${SCRIPT_DIR}/.state}/deps-checked"
+PATCHMOX_DEPS_CACHE_TTL_SECONDS=86400  # 24 hours
+
+# @function _deps_cache_is_fresh
+# @description Returns 0 if the dependency cache exists and is newer than TTL.
+function _deps_cache_is_fresh() {
+    if [[ ! -f "$PATCHMOX_DEPS_CACHE_FILE" ]]; then
+        return 1
+    fi
+
+    local now
+    now=$(date +%s)
+    local mtime
+    mtime=$(stat -c %Y "$PATCHMOX_DEPS_CACHE_FILE" 2>/dev/null || stat -f %m "$PATCHMOX_DEPS_CACHE_FILE" 2>/dev/null || echo 0)
+
+    if [[ $(( now - mtime )) -lt $PATCHMOX_DEPS_CACHE_TTL_SECONDS ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# @function _write_deps_cache
+# @description Writes the dependency check timestamp to the cache file.
+function _write_deps_cache() {
+    ensure_state_dir || return 0
+    date +%s > "$PATCHMOX_DEPS_CACHE_FILE" 2>/dev/null || true
+}
+
+# @function check_script_dependencies
+# @description Validates that required external tools are installed.
+#              Critical dependencies cause a fatal error; recommended ones only warn.
+#              Result is cached for 24 hours to avoid checking on every cron run.
+# @returns 0 if all critical dependencies found, 1 if any missing
+function check_script_dependencies() {
+    if _deps_cache_is_fresh; then
+        log_debug "Dependency check cached as fresh; skipping."
+        return 0
+    fi
+
+    local critical=( "curl" "jq" "pvesh" "qm" )
+    local recommended=( "grep" "sed" "awk" "sort" )
+
+    local missing_critical=()
+    local missing_recommended=()
+    local dep
+
+    for dep in "${critical[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            missing_critical+=("$dep")
+        fi
+    done
+
+    for dep in "${recommended[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            missing_recommended+=("$dep")
+        fi
+    done
+
+    if [[ ${#missing_recommended[@]} -gt 0 ]]; then
+        log_warn "Optional dependencies missing: ${missing_recommended[*]}"
+    fi
+
+    if [[ ${#missing_critical[@]} -gt 0 ]]; then
+        log_error "Critical dependencies missing: ${missing_critical[*]}"
+        return 1
+    fi
+
+    log_info "All critical dependencies are installed."
+    _write_deps_cache
+    return 0
+}

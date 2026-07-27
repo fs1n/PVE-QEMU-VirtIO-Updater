@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+#
+# Module: policy.func (PatchMox)
+# Description: Policy evaluator. Loads ordered policy files and decides what
+#              action, if any, an event is allowed to trigger.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: jq
+# Environment: SCRIPT_DIR, POLICY_DIR
+# Usage: source lib/core/policy.func; load_policies; evaluate_policy "$event_json"
+
+POLICY_DIR="${POLICY_DIR:-${SCRIPT_DIR}/policies}"
+PATCHMOX_POLICIES=()
+
+# @function load_policies
+# @description Loads all .policy files from POLICY_DIR in alphabetical order.
+# @returns 0 on success, 1 on failure
+function load_policies() {
+    PATCHMOX_POLICIES=()
+    if [[ ! -d "$POLICY_DIR" ]]; then
+        log_warn "Policy directory not found: $POLICY_DIR"
+        return 1
+    fi
+
+    local policy_file
+    while IFS= read -r -d '' policy_file; do
+        if jq empty "$policy_file" 2>/dev/null; then
+            PATCHMOX_POLICIES+=("$policy_file")
+        else
+            log_warn "Invalid JSON policy file, skipping: $policy_file"
+        fi
+    done < <(find "$POLICY_DIR" -maxdepth 1 -type f -name '*.policy' -print0 | sort -z)
+
+    log_debug "Loaded ${#PATCHMOX_POLICIES[@]} policy file(s) from $POLICY_DIR"
+}
+
+# @function _policy_matches_event
+# @description Tests whether a policy's match rules match the given event.
+#              Match rules are ANDed. Each rule key is checked against the
+#              event payload. Empty match = matches everything.
+# @args policy_file (string): path to the policy JSON file
+#       event_json (string): canonical PatchMox event
+# @returns 0 if match, 1 if no match
+function _policy_matches_event() {
+    local policy_file="$1"
+    local event_json="$2"
+
+    local match_json
+    match_json=$(jq -c '.match // {}' "$policy_file" 2>/dev/null)
+
+    # Empty match object = matches everything.
+    if [[ "$match_json" == "{}" ]]; then
+        return 0
+    fi
+
+    # Extract event payload for matching.
+    local payload_json
+    payload_json=$(echo "$event_json" | jq -c '.payload // {}')
+
+    # Check each match key.
+    # Supported keys: type (event type), vmid, node, components (subset check).
+    local match_type match_vmid match_node match_components
+
+    match_type=$(echo "$match_json" | jq -r '.type // empty')
+    if [[ -n "$match_type" ]]; then
+        local event_type
+        event_type=$(echo "$event_json" | jq -r '.type // ""')
+        if [[ "$event_type" != "$match_type" ]]; then
+            return 1
+        fi
+    fi
+
+    match_vmid=$(echo "$match_json" | jq -r '.vmid // empty')
+    if [[ -n "$match_vmid" ]]; then
+        local event_vmid
+        event_vmid=$(echo "$payload_json" | jq -r '.vmid // ""')
+        if [[ "$event_vmid" != "$match_vmid" ]]; then
+            return 1
+        fi
+    fi
+
+    match_node=$(echo "$match_json" | jq -r '.node // empty')
+    if [[ -n "$match_node" ]]; then
+        local event_node
+        event_node=$(echo "$payload_json" | jq -r '.node // ""')
+        if [[ "$event_node" != "$match_node" ]]; then
+            return 1
+        fi
+    fi
+
+    match_components=$(echo "$match_json" | jq -c '.components // empty')
+    if [[ "$match_components" != "null" && -n "$match_components" ]]; then
+        # All required components must be present in the event's components.
+        local event_components
+        event_components=$(echo "$payload_json" | jq -c '.components // []')
+        local all_match
+        all_match=$(echo "$match_components" | jq --argjson event "$event_components" '
+            . as $required | all(.[]; . as $item | $event | index($item) != null)
+        ' 2>/dev/null || echo "false")
+        if [[ "$all_match" != "true" ]]; then
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+# @function evaluate_policy
+# @description Returns the decision for a given event by testing each loaded
+#              policy in order. First match wins. If no policy matches, the
+#              default decision is returned: {"notify": true, "action": "none"}.
+# @args event_json (string): canonical PatchMox event
+# @returns JSON decision object on stdout
+function evaluate_policy() {
+    local event_json="${1:-}"
+    if [[ -z "$event_json" ]]; then
+        event_json="{}"
+    fi
+
+    local policy_file
+    for policy_file in "${PATCHMOX_POLICIES[@]}"; do
+        if _policy_matches_event "$policy_file" "$event_json"; then
+            local decision
+            decision=$(jq -c '.decision // {"notify": true, "action": "none"}' "$policy_file" 2>/dev/null)
+            local policy_name
+            policy_name=$(jq -r '.name // "unnamed"' "$policy_file" 2>/dev/null)
+            log_debug "Policy '$policy_name' matched event"
+            echo "$decision"
+            return 0
+        fi
+    done
+
+    # Default: notify-only, no action.
+    jq -n '{notify: true, action: "none", reason: "default policy (no match)"}'
+}

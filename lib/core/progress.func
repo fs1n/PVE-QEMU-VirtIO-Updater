@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+#
+# Module: progress.func (PatchMox)
+# Description: Minimal interactive progress animations for terminal use.
+#              No external dependencies. Auto-disables when stdout is not a TTY
+#              or when PATCHMOX_NO_PROGRESS is set.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-27
+#
+# Dependencies: bash, sleep, printf
+# Environment: PATCHMOX_NO_PROGRESS, PATCHMOX_PROGRESS_TARGET (1=stderr, 2=stdout)
+# Usage: source lib/core/progress.func; start_spinner "Discovering VMs..."; stop_spinner
+
+PATCHMOX_PROGRESS_SPINNER_PID=""
+PATCHMOX_PROGRESS_SPINNER_MSG=""
+PATCHMOX_TERMINAL_WIDTH=""
+
+# @function _progress_target
+# @description Returns the file descriptor to write progress output to.
+function _progress_target() {
+    case "${PATCHMOX_PROGRESS_TARGET:-2}" in
+        1) echo "/dev/stdout" ;;
+        *) echo "/dev/stderr" ;;
+    esac
+}
+
+# @function _terminal_width
+# @description Returns the current terminal width, falling back to 80.
+function _terminal_width() {
+    local width=80
+    if command -v tput >/dev/null 2>&1 && [[ -t 1 ]]; then
+        width=$(tput cols 2>/dev/null || echo 80)
+    elif [[ -t 1 ]]; then
+        local stty_size
+        stty_size=$(stty size 2>/dev/null || true)
+        if [[ -n "$stty_size" ]]; then
+            width=$(echo "$stty_size" | awk '{print $2}')
+        fi
+    fi
+    if [[ -z "$width" || "$width" -lt 20 ]]; then
+        width=80
+    fi
+    echo "$width"
+}
+
+# @function _update_terminal_width
+# @description Updates the cached terminal width. Called at start and on SIGWINCH.
+function _update_terminal_width() {
+    PATCHMOX_TERMINAL_WIDTH=$(_terminal_width)
+}
+
+# @function _fit_line
+# @description Truncates a string so it fits within the current terminal width.
+# @args text (string): text to fit
+function _fit_line() {
+    local text="${1:-}"
+    if [[ -z "$PATCHMOX_TERMINAL_WIDTH" ]]; then
+        _update_terminal_width
+    fi
+    local width=$PATCHMOX_TERMINAL_WIDTH
+    local len=${#text}
+    if [[ "$len" -ge "$width" ]]; then
+        # Reserve 3 chars for "..." and keep the prefix.
+        local keep=$((width - 4))
+        if [[ "$keep" -lt 1 ]]; then
+            keep=1
+        fi
+        echo "${text:0:$keep}..."
+    else
+        echo "$text"
+    fi
+}
+
+# @function is_interactive_terminal
+# @description Returns true if stdout is a terminal, progress is not disabled,
+#              and console logging is not enabled (log lines would fight the animation).
+function is_interactive_terminal() {
+    [[ -t 1 ]] \
+        && [[ -z "${PATCHMOX_NO_PROGRESS:-}" ]] \
+        && [[ "${PATCHMOX_CONSOLE_LOG:-false}" != "true" ]]
+}
+
+# @function _clear_progress_line
+# @description Clears the current terminal line using the detected terminal width.
+function _clear_progress_line() {
+    local target
+    target=$(_progress_target)
+    if [[ -z "$PATCHMOX_TERMINAL_WIDTH" ]]; then
+        _update_terminal_width
+    fi
+    # Overwrite the current line with spaces up to the terminal width, then return.
+    printf '\r%*s\r' "$PATCHMOX_TERMINAL_WIDTH" '' >"$target"
+}
+
+# @function start_spinner
+# @description Starts a background spinner with a message on stderr.
+#              The message is truncated to fit the current terminal width.
+# @args message (string): text shown next to the spinner
+function start_spinner() {
+    local msg="${1:-Working...}"
+
+    if ! is_interactive_terminal; then
+        return 0
+    fi
+
+    stop_spinner 2>/dev/null || true
+    _update_terminal_width
+    trap '_update_terminal_width' WINCH
+
+    PATCHMOX_PROGRESS_SPINNER_MSG="$msg"
+
+    (
+        local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+        local i=0
+        local target
+        target=$(_progress_target)
+        while true; do
+            local line
+            line=$(_fit_line "${frames[$i]} $msg")
+            printf '\r%s' "$line" >"$target"
+            i=$(( (i + 1) % 10 ))
+            sleep 0.1
+        done
+    ) &
+    PATCHMOX_PROGRESS_SPINNER_PID=$!
+}
+
+# @function stop_spinner
+# @description Stops the background spinner and clears the line.
+function stop_spinner() {
+    if [[ -n "${PATCHMOX_PROGRESS_SPINNER_PID:-}" ]] && kill -0 "$PATCHMOX_PROGRESS_SPINNER_PID" 2>/dev/null; then
+        kill "$PATCHMOX_PROGRESS_SPINNER_PID" 2>/dev/null || true
+        wait "$PATCHMOX_PROGRESS_SPINNER_PID" 2>/dev/null || true
+    fi
+    PATCHMOX_PROGRESS_SPINNER_PID=""
+    if is_interactive_terminal; then
+        _clear_progress_line
+    fi
+}
+
+# @function progress_step
+# @description Prints a progress line for batch operations (no spinner).
+#              The message is truncated to fit the current terminal width.
+# @args current (int): current step number
+#       total (int): total step count
+#       message (string): operation text
+function progress_step() {
+    local current="${1:-0}"
+    local total="${2:-0}"
+    local msg="${3:-}"
+
+    if ! is_interactive_terminal; then
+        return 0
+    fi
+
+    local target
+    target=$(_progress_target)
+    if [[ -z "$PATCHMOX_TERMINAL_WIDTH" ]]; then
+        _update_terminal_width
+    fi
+    local line
+    line=$(_fit_line "[$current/$total] $msg")
+    printf '\r%s' "$line" >"$target"
+}
+
+# @function clear_progress
+# @description Clears any active progress line.
+function clear_progress() {
+    if is_interactive_terminal; then
+        _clear_progress_line
+    fi
+}

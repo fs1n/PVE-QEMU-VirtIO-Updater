@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+#
+# Module: events.func (PatchMox)
+# Description: Event bus primitives for PatchMox. Emits canonical JSON events
+#              and dispatches them to policy evaluation, actions, and channels.
+#              No persistent event journal is kept; queue files are the durable
+#              record for actions that require it.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: jq, date
+# Environment: SCRIPT_DIR, STATE_DIR
+# Usage: source lib/core/events.func; dispatch_event "update.available" "$payload"
+
+# @function build_event
+# @description Builds a canonical JSON event with event_id, timestamp, type, and payload.
+# @args event_type (string): event type, e.g. "update.available"
+#       payload (string): JSON object with event-specific fields
+# @returns JSON event on stdout, empty on invalid payload
+function build_event() {
+    local event_type="${1:-unknown}"
+    local payload="${2:-}"
+    if [[ -z "$payload" ]]; then
+        payload="{}"
+    fi
+
+    # Validate that payload is valid JSON
+    if ! jq -e . >/dev/null 2>&1 <<< "$payload"; then
+        echo "ERROR: build_event received invalid JSON payload for type '$event_type': $payload" >&2
+        return 1
+    fi
+
+    local event_id
+    event_id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s%N)-$$")"
+
+    jq -n \
+        --arg event_id "$event_id" \
+        --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        --arg type "$event_type" \
+        --argjson payload "$payload" \
+        '{event_id: $event_id, timestamp: $timestamp, type: $type, payload: $payload}'
+}
+
+# @function emit_event
+# @description Builds and emits a canonical JSON event to stdout.
+#              This is the low-level primitive. Prefer dispatch_event which
+#              also routes to policy, actions, and channels.
+# @args event_type (string): event type, e.g. "update.available"
+#       payload (string): JSON object with event-specific fields
+# @returns 0 on success, 1 on failure
+function emit_event() {
+    build_event "$@"
+}
+
+# @function dispatch_event
+# @description Builds a canonical event, logs it, evaluates policy, and routes
+#              the decision to actions (enqueue) and channels (notifications).
+#              This is the main entry point for the event pipeline.
+# @args event_type (string): event type, e.g. "update.available"
+#       payload (string): JSON object with event-specific fields
+# @returns JSON decision on stdout (for callers that need it), empty on error
+function dispatch_event() {
+    local event_type="${1:-unknown}"
+    local payload="${2:-}"
+
+    local event_json
+    event_json=$(build_event "$event_type" "$payload") || return 1
+
+    # Log the event at debug level for visibility.
+    log_debug "Event: $event_type ($event_json)"
+
+    # Evaluate policy for this event.
+    local decision
+    decision=$(evaluate_policy "$event_json")
+
+    # Route to channels if policy says notify.
+    local should_notify
+    should_notify=$(echo "$decision" | jq -r '.notify // false')
+    if [[ "$should_notify" == "true" ]]; then
+        local subject body
+        subject="PatchMox: $event_type"
+        body=$(echo "$event_json" | jq -c '.')
+        notification_send "$subject" "$body" 2>/dev/null || true
+    fi
+
+    # Route to actions based on policy decision.
+    local action
+    action=$(echo "$decision" | jq -r '.action // "none"')
+    if [[ "$action" == "auto-update" ]]; then
+        enqueue_job "$event_json" "$decision"
+    fi
+
+    # Echo the decision so callers can use it.
+    echo "$decision"
+}
+
+# @function build_check_started_payload
+# @description Builds the payload for check.started event.
+# @args virtio_version (string): latest VirtIO version
+#       qemu_ga_version (string): latest QEMU GA version
+# @returns JSON payload on stdout
+function build_check_started_payload() {
+    local virtio_version="${1:-unknown}"
+    local qemu_ga_version="${2:-unknown}"
+    jq -n \
+        --arg virtio_version "$virtio_version" \
+        --arg qemu_ga_version "$qemu_ga_version" \
+        '{virtio_version: $virtio_version, qemu_ga_version: $qemu_ga_version}'
+}
+
+# @function build_vm_checked_payload
+# @description Builds the payload for vm.checked / update.available events.
+# @args vmid, node, vmgenid, virtio_current, virtio_latest, qemu_current, qemu_latest, components_json
+# @returns JSON payload on stdout
+function build_vm_checked_payload() {
+    local vmid="${1:-}"
+    local node="${2:-}"
+    local vmgenid="${3:-}"
+    local virtio_current="${4:-}"
+    local virtio_latest="${5:-}"
+    local qemu_current="${6:-}"
+    local qemu_latest="${7:-}"
+    local components_json="${8:-[]}"
+
+    jq -n \
+        --arg vmid "$vmid" \
+        --arg node "$node" \
+        --arg vmgenid "$vmgenid" \
+        --arg virtio_current "$virtio_current" \
+        --arg virtio_latest "$virtio_latest" \
+        --arg qemu_current "$qemu_current" \
+        --arg qemu_latest "$qemu_latest" \
+        --argjson components "$components_json" \
+        '{
+            vmid: $vmid,
+            node: $node,
+            vmgenid: $vmgenid,
+            components: $components,
+            current: {virtio: $virtio_current, qemu_ga: $qemu_current},
+            latest: {virtio: $virtio_latest, qemu_ga: $qemu_latest}
+        }'
+}
