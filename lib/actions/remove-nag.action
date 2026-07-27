@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# Module: remove-nag.action (PatchMox)
+# Description: Removes the SVG update banner from a Proxmox VM description.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: pvesh, qm, jq, grep, sed
+# Environment: N/A
+# Usage: source lib/actions/remove-nag.action; remove_vm_nag "pve-01" 100
+
+# @function remove_vm_nag
+# @description Removes the SVG update banner from VM description, preserving other content.
+#              Suppresses qm set stdout so it does not pollute the terminal during progress output.
+# @args node (string): Proxmox node name
+#       vmid (string): Proxmox VM ID
+function remove_vm_nag() {
+    local node=$1
+    local vmid=$2
+
+    local current_vm_config
+    current_vm_config=$(pvesh get /nodes/$node/qemu/$vmid/config --output-format json 2>/dev/null)
+    local current_description
+    current_description=$(echo "$current_vm_config" | jq -r '.description // empty')
+
+    if [[ -z "$current_description" ]] || ! echo "$current_description" | grep -Fq "update-$vmid.svg"; then
+        log_debug "No update nag found for VM $vmid"
+        return 0
+    fi
+
+    local new_description
+    new_description=$(echo "$current_description" | sed -E "s|(<a[^>]*>)?<img src=\"/pve2/images/update-$vmid\.svg\"[^>]*/>(</a>)?(<hr/>)?||g")
+    new_description=$(echo "$new_description" | sed -E 's|<hr/>(<hr/>)+|<hr/>|g' | sed -E 's|^<hr/>||' | sed -E 's|<hr/>$||')
+
+    local description_arg="$new_description"
+    if [[ -z "$description_arg" || "$description_arg" == "null" ]]; then
+        description_arg=""
+    fi
+
+    if qm set "$vmid" -description "$description_arg" >/dev/null 2>&1; then
+        log_info "Removed update nag from VM $vmid"
+        return 0
+    else
+        log_error "Failed to remove update nag from VM $vmid"
+        return 1
+    fi
+}
+
+# @function remove_vm_nag
+# @description Legacy alias kept for compatibility with callers that pass a single vmid.
+function remove_nag_for_vm() {
+    local vmid=$1
+    local node
+    node=$(echo "$windows_vms" | jq -r --arg vmid "$vmid" '.[$vmid].node // empty')
+    if [[ -n "$node" ]]; then
+        remove_vm_nag "$node" "$vmid"
+    else
+        log_warn "remove_nag_for_vm: could not find node for VM $vmid"
+    fi
+}

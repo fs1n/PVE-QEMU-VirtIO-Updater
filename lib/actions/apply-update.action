@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Module: apply-update.action (PatchMox)
+# Description: Executes an auto-update inside a VM. Phase 2 stub: logs and
+#              returns success so the worker can finish the job.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: qm, jq
+# Environment: SCRIPT_DIR
+# Usage: source lib/actions/apply-update.action; apply_update_action "$job_json"
+
+# @function apply_update_action
+# @description Executes the update described by a queue job.
+# @args job_json (string): queue job JSON containing vmid, node, components, event, decision
+# @returns 0 on success, 1 on failure
+function apply_update_action() {
+    local job_json="${1:-}"
+
+    if [[ -z "$job_json" ]]; then
+        log_error "apply_update_action called with empty job JSON"
+        return 1
+    fi
+
+    local vmid node components
+    vmid=$(echo "$job_json" | jq -r '.event.vmid // .vmid // empty')
+    node=$(echo "$job_json" | jq -r '.event.node // .node // empty')
+    components=$(echo "$job_json" | jq -r '.event.components | join(", ") // empty')
+
+    if [[ -z "$vmid" || -z "$node" ]]; then
+        log_error "apply_update_action: missing vmid or node in job"
+        return 1
+    fi
+
+    log_info "Applying update for VM $vmid on $node (components: ${components:-unknown})"
+
+    # Phase 2 stub: real guest-side update logic will go here.
+    # For now, log the intent and return success so the worker flow can be tested.
+    log_info "Update apply is a Phase 2 stub for VM $vmid; no guest mutation performed."
+
+    return 0
+}

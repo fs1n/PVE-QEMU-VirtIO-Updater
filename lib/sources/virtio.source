@@ -1,0 +1,391 @@
+#!/usr/bin/env bash
+#
+# Module: virtio.source (PatchMox)
+# Description: Source module for VirtIO driver and QEMU Guest Agent checks on Proxmox VE.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: pvesh, qm, jq, curl, grep, sed, awk, sort
+# Environment: SCRIPT_DIR
+# Usage: source lib/sources/virtio.source
+
+FEDORA_VIRTIO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/"
+FEDORA_QEMU_GA_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/"
+
+VERSION_CACHE_TTL_MINUTES="${VERSION_CACHE_TTL_MINUTES:-60}"
+VERSION_CACHE_FILE="${VERSION_CACHE_FILE:-${STATE_DIR:-${SCRIPT_DIR}/.state}/latest-versions.json}"
+VERSION_CACHE_FORCE_REFRESH="${VERSION_CACHE_FORCE_REFRESH:-false}"
+
+# @function _version_cache_path
+# @description Returns the path to the version cache file, ensuring the directory exists.
+function _version_cache_path() {
+    local cache_dir
+    cache_dir=$(dirname "$VERSION_CACHE_FILE")
+    if [[ ! -d "$cache_dir" ]]; then
+        mkdir -p "$cache_dir" 2>/dev/null || {
+            echo "{}"
+            return 1
+        }
+    fi
+    echo "$VERSION_CACHE_FILE"
+}
+
+# @function _version_cache_is_valid
+# @description Checks whether the version cache exists and is younger than TTL.
+# @returns 0 if valid, 1 otherwise
+function _version_cache_is_valid() {
+    local cache_file
+    cache_file=$(_version_cache_path) || return 1
+
+    if [[ ! -f "$cache_file" ]]; then
+        return 1
+    fi
+
+    if [[ "$VERSION_CACHE_FORCE_REFRESH" == "true" ]]; then
+        return 1
+    fi
+
+    local fetched_at now_epoch fetched_epoch ttl_seconds
+    fetched_at=$(jq -r '.fetched_at // empty' "$cache_file" 2>/dev/null)
+    if [[ -z "$fetched_at" ]]; then
+        return 1
+    fi
+
+    now_epoch=$(date -u '+%s')
+    fetched_epoch=$(date -u -d "$fetched_at" '+%s' 2>/dev/null || echo 0)
+    ttl_seconds=$((VERSION_CACHE_TTL_MINUTES * 60))
+
+    if [[ $((now_epoch - fetched_epoch)) -le $ttl_seconds ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# @function _read_version_cache
+# @description Reads the cached VirtIO and QEMU GA versions.
+# @returns JSON object with virtio and qemu_ga keys
+function _read_version_cache() {
+    local cache_file
+    cache_file=$(_version_cache_path) || return 1
+    jq -c '.' "$cache_file" 2>/dev/null
+}
+
+# @function _write_version_cache
+# @description Writes the fetched versions to the cache file.
+# @args virtio_json (string): JSON with version/release for VirtIO
+#       qemu_ga_json (string): JSON with version/release for QEMU GA
+function _write_version_cache() {
+    local virtio_json="${1:-}"
+    local qemu_ga_json="${2:-}"
+    if [[ -z "$virtio_json" ]]; then
+        virtio_json="{}"
+    fi
+    if [[ -z "$qemu_ga_json" ]]; then
+        qemu_ga_json="{}"
+    fi
+    local cache_file
+    cache_file=$(_version_cache_path) || return 1
+
+    jq -n \
+        --arg fetched_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        --arg ttl_minutes "$VERSION_CACHE_TTL_MINUTES" \
+        --argjson virtio "$virtio_json" \
+        --argjson qemu_ga "$qemu_ga_json" \
+        '{fetched_at: $fetched_at, ttl_minutes: ($ttl_minutes | tonumber), virtio: $virtio, qemu_ga: $qemu_ga}' \
+        > "$cache_file"
+}
+
+# @function _fetch_remote_virtio_version
+# @description Actually fetches the latest VirtIO version from Fedora People Archive.
+function _fetch_remote_virtio_version() {
+    local archive_page
+    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_VIRTIO_URL}") || {
+        log_error "Failed to fetch Fedora People Archive page"
+    }
+
+    local http_code=$(echo "$archive_page" | tail -n1)
+    local page_content=$(echo "$archive_page" | sed '$d')
+
+    if [ "$http_code" != "200" ]; then
+        log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+    fi
+
+    local latest_json
+    latest_json=$(echo "$page_content" | awk '
+        /virtio-win-[0-9.]+-([0-9]+)\// {
+            start = match($0, /virtio-win-[0-9.]+-([0-9]+)\//)
+            if (start > 0) {
+                full_match = substr($0, RSTART, RLENGTH)
+                gsub(/virtio-win-|\//, "", full_match)
+                split(full_match, parts, "-")
+                version = parts[1]
+                if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) {
+                    date = substr($0, RSTART, RLENGTH)
+                    print version " " date
+                }
+            }
+        }' |
+        sort -V |
+        tail -n1 |
+        awk '{ver=$1; $1=""; sub(/^ /, "", $0); printf("{\"version\":\"%s\",\"release\":\"%s\"}\n", ver, $0)}'
+    )
+
+    if [ -z "$latest_json" ]; then
+        log_error "Could not find any virtio-win directory versions"
+    fi
+
+    echo "$latest_json"
+}
+
+# @function _fetch_remote_qemu_ga_version
+# @description Actually fetches the latest QEMU Guest Agent version from Fedora People Archive.
+function _fetch_remote_qemu_ga_version() {
+    local archive_page
+    archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_QEMU_GA_URL}") || {
+        log_error "Failed to fetch Fedora People Archive page"
+    }
+
+    local http_code=$(echo "$archive_page" | tail -n1)
+    local page_content=$(echo "$archive_page" | sed '$d')
+
+    if [ "$http_code" != "200" ]; then
+        log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+    fi
+
+    local latest_json
+    latest_json=$(echo "$page_content" | awk '
+        /qemu-ga-win-[^"]+\// {
+            if (match($0, /qemu-ga-win-[0-9]+\.[0-9]+\.[0-9]+/)) {
+                full_match = substr($0, RSTART, RLENGTH)
+                sub(/qemu-ga-win-/, "", full_match)
+                version = full_match
+                if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) {
+                    date = substr($0, RSTART, RLENGTH)
+                    print version " " date
+                }
+            }
+        }' |
+        sort -V |
+        tail -n1 |
+        awk '{ver=$1; $1=""; sub(/^ /, "", $0); printf("{\"version\":\"%s\",\"release\":\"%s\"}\n", ver, $0)}'
+    )
+
+    if [ -z "$latest_json" ]; then
+        log_error "Could not find any qemu-ga-win directory versions"
+    fi
+
+    echo "$latest_json"
+}
+
+# @function fetch_latest_virtio_version
+# @description Returns the latest VirtIO version, using the cache if valid.
+# @returns JSON object with keys: version, release
+function fetch_latest_virtio_version() {
+    if _version_cache_is_valid; then
+        log_debug "Using cached VirtIO/QEMU GA versions"
+        _read_version_cache | jq -c '.virtio'
+        return 0
+    fi
+
+    log_info "Fetching latest VirtIO and QEMU GA versions from Fedora Archive"
+    local virtio_json qemu_ga_json
+    virtio_json=$(_fetch_remote_virtio_version)
+    qemu_ga_json=$(_fetch_remote_qemu_ga_version)
+
+    _write_version_cache "$virtio_json" "$qemu_ga_json"
+    echo "$virtio_json"
+}
+
+# @function fetch_latest_qemu_ga_version
+# @description Returns the latest QEMU GA version, using the cache if valid.
+# @returns JSON object with keys: version, release
+function fetch_latest_qemu_ga_version() {
+    if _version_cache_is_valid; then
+        _read_version_cache | jq -c '.qemu_ga'
+        return 0
+    fi
+
+    local virtio_json qemu_ga_json
+    virtio_json=$(_fetch_remote_virtio_version)
+    qemu_ga_json=$(_fetch_remote_qemu_ga_version)
+
+    _write_version_cache "$virtio_json" "$qemu_ga_json"
+    echo "$qemu_ga_json"
+}
+
+# @function get_windows_vms
+# @description Discovers all Windows VMs on the cluster and returns their metadata as JSON.
+#              Uses a single /cluster/resources call for all VMs + status, then only fetches
+#              config for running VMs. Non-running VMs are included with ostype=null so the
+#              caller can filter by status. Config fetches are limited to running VMs only,
+#              avoiding unnecessary pvesh round-trips for stopped VMs or templates.
+# @returns JSON object with VM IDs as keys
+function get_windows_vms() {
+    local cluster_resources
+    cluster_resources=$(pvesh get /cluster/resources --output-format json 2>/dev/null)
+
+    if [[ -z "$cluster_resources" ]]; then
+        log_error "Failed to fetch /cluster/resources"
+        echo '{}'
+        return 1
+    fi
+
+    # All QEMU VMs from cluster resources with vmid, node, name, status, template.
+    local qemu_vms
+    qemu_vms=$(echo "$cluster_resources" | jq '
+        [ .[] | select(.type == "qemu") |
+          { vmid: (.vmid | tostring), node: .node, name: .name, status: .status, template: (.template // false) }
+        ]')
+
+    if [[ -z "$qemu_vms" || "$qemu_vms" == "[]" ]]; then
+        echo '{}'
+        return 0
+    fi
+
+    local json_items=""
+    local vmid node vm_name status vm_config os_type vmgenid vmgenid_json vm_obj
+
+    while IFS= read -r vmid; do
+        IFS= read -r node
+        IFS= read -r vm_name
+        IFS= read -r status
+
+        # Skip templates entirely — they are never update targets.
+        # Only fetch config for running VMs; stopped VMs get ostype=null
+        # (cheaper than a pvesh round-trip per stopped VM).
+        if [[ "$status" != "running" ]]; then
+            vm_obj=$(jq -n \
+                --arg node "$node" \
+                --arg name "$vm_name" \
+                --arg status "$status" \
+                --arg vmid "$vmid" \
+                --argjson vmgenid null \
+                '{($vmid): {node: $node, name: $name, ostype: null, status: $status, vmgenid: $vmgenid}}')
+            json_items+="$vm_obj"$'\n'
+            continue
+        fi
+
+        vm_config=$(pvesh get "/nodes/$node/qemu/$vmid/config" --output-format json 2>/dev/null)
+        if [[ -z "$vm_config" ]]; then
+            log_warn "Could not fetch config for VM $vmid on $node"
+            continue
+        fi
+
+        os_type=$(echo "$vm_config" | jq -r '.ostype // empty')
+
+        # Skip non-Windows VMs early — no need to include them in the result.
+        if [[ -z "$os_type" || "$os_type" != w* ]]; then
+            continue
+        fi
+
+        vmgenid=$(echo "$vm_config" | jq -r '.vmgenid // empty')
+        if [[ -z "$vmgenid" ]]; then
+            vmgenid_json=null
+        else
+            vmgenid_json="\"$vmgenid\""
+        fi
+
+        vm_obj=$(jq -n \
+            --arg node "$node" \
+            --arg name "$vm_name" \
+            --arg ostype "$os_type" \
+            --arg status "$status" \
+            --arg vmid "$vmid" \
+            --argjson vmgenid "$vmgenid_json" \
+            '{($vmid): {node: $node, name: $name, ostype: $ostype, status: $status, vmgenid: $vmgenid}}')
+
+        json_items+="$vm_obj"$'\n'
+    done <<< "$(echo "$qemu_vms" | jq -r '.[] | .vmid, .node, .name, .status')"
+
+    if [[ -n "$json_items" ]]; then
+        jq -s 'add' <<< "$json_items"
+    else
+        echo '{}'
+    fi
+}
+
+# @function _sanitize_version_string
+# @description Strips whitespace and control characters from a guest-agent version string.
+#              Returns empty if the result does not look like a dotted version.
+# @args raw (string): raw version string from guest agent
+function _sanitize_version_string() {
+    local raw="$1"
+    local cleaned
+    cleaned=$(echo "$raw" | tr -d '\r\n\t' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+    if [[ "$cleaned" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+        echo "$cleaned"
+    else
+        echo ""
+    fi
+}
+
+# @function get_windows_virtio_version
+# @description Query VirtIO driver version installed in a Windows VM via QEMU Guest Agent
+# @args vmid (string): Proxmox VM ID
+# @returns String containing version, empty string if not found or error
+function get_windows_virtio_version() {
+    local vmid=$1
+    local raw_version
+    raw_version=$(qm guest exec "$vmid" -- powershell.exe -Command 'Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object { $_.DisplayName } | Where-Object { $_.DisplayName -like "*virtio*installer*" } | Select-Object -ExpandProperty DisplayVersion' 2>/dev/null | jq -r '.["out-data"] // empty')
+    _sanitize_version_string "$raw_version"
+}
+
+# @function get_windows_QEMU_GA_version
+# @description Query QEMU Guest Agent version installed in a Windows VM
+# @args vmid (string): Proxmox VM ID
+# @returns String containing version, empty string if not found or error
+function get_windows_QEMU_GA_version() {
+    local vmid=$1
+    local raw_version
+    raw_version=$(qm guest exec "$vmid" -- powershell.exe -Command "\$qemuPaths = @('C:\\Program Files\\Qemu-ga\\qemu-ga.exe', 'C:\\Program Files (x86)\\Qemu-ga\\qemu-ga.exe'); foreach (\$path in \$qemuPaths) { if (Test-Path \$path) { (Get-Item \$path).VersionInfo.FileVersion } }" 2>/dev/null | jq -r '.["out-data"] // empty')
+    _sanitize_version_string "$raw_version"
+}
+
+# @function get_vm_genid
+# @description Retrieve VM generation ID for clone detection; falls back to ctime+name if vmgenid not set
+# @args windows_vms_json (string): JSON object of all Windows VMs
+#       node (string): Proxmox node name
+#       vmid (string): Proxmox VM ID
+function get_vm_genid() {
+    local windows_vms_json=$1
+    local node=$2
+    local vmid=$3
+
+    local vmgenid
+    vmgenid=$(echo "$windows_vms_json" | jq -r --arg vmid "$vmid" '.[$vmid].vmgenid // empty')
+
+    if [[ -z "$vmgenid" || "$vmgenid" == "null" ]]; then
+        local vm_config
+        vm_config=$(pvesh get "/nodes/${node}/qemu/${vmid}/config" --output-format json 2>/dev/null || echo '{}')
+        local ctime
+        ctime=$(echo "$vm_config" | jq -r '.meta // empty' | grep -oP 'ctime=\K[0-9]+' || echo "0")
+        local vm_name
+        vm_name=$(echo "$vm_config" | jq -r '.name // "unnamed"')
+        echo "fallback-${ctime}-${vm_name}"
+        log_warn "VM $vmid has no vmgenid, using fallback identifier" >&2
+    else
+        echo "$vmgenid"
+    fi
+}
+
+# @function get_vm_creation_date
+# @description Extract VM creation date/time from Proxmox metadata
+# @args node (string): Proxmox node name
+#       vmid (string): Proxmox VM ID
+function get_vm_creation_date() {
+    local node=$1
+    local vmid=$2
+
+    local ctime
+    ctime=$(pvesh get /nodes/$node/qemu/$vmid/config --output-format json | \
+        jq -r '.meta // empty' | \
+        grep -oP 'ctime=\K[0-9]+')
+
+    if [ -n "$ctime" ]; then
+        date -d "@$ctime" '+%Y-%m-%d %H:%M:%S'
+    else
+        echo "unknown"
+    fi
+}

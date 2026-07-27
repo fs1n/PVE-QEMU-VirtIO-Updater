@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+#
+# Module: smtp.channel (PatchMox)
+# Description: SMTP notification channel for PatchMox.
+# Author: Frederik S. (fs1n) and PatchMox Contributors
+# Date: 2026-07-15
+#
+# Dependencies: curl
+# Environment: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, MAIL_TO
+# Usage: source lib/channels/smtp.channel; channel_send_smtp "subject" "body" [content_type]
+
+# @function _smtp_parse_recipients
+# @description Normalizes MAIL_TO to a comma-separated recipient list.
+#              Accepts either a Bash array or a comma/space-separated string.
+function _smtp_parse_recipients() {
+    local recipients=""
+
+    # If MAIL_TO is a declared array, join it.
+    if [[ -n "${MAIL_TO[*]:-}" ]] && declare -p MAIL_TO 2>/dev/null | grep -q 'declare -a'; then
+        recipients=$(IFS=','; echo "${MAIL_TO[*]}")
+    else
+        # Treat as plain string, normalize spaces around commas.
+        recipients=$(echo "${MAIL_TO:-}" | sed 's/, */,/g' | sed 's/^ *//;s/ *$//')
+    fi
+
+    echo "$recipients"
+}
+
+# @function channel_send_smtp
+# @description Sends email notification via SMTP using curl.
+# @args subject body [content_type]
+function channel_send_smtp() {
+    local subject=${1-}
+    local body=${2-}
+    local content_type="${3:-text/plain}"
+
+    if ! command -v curl >/dev/null 2>&1; then
+        log_error "curl is required for SMTP notifications but not found"
+        return 1
+    fi
+
+    if [[ -z "${SMTP_HOST:-}" ]]; then
+        log_error "SMTP_HOST is required for SMTP notifications"
+        return 1
+    fi
+
+    local to_header
+    to_header=$(_smtp_parse_recipients)
+    if [[ -z "$to_header" ]]; then
+        log_error "MAIL_TO is required for SMTP notifications"
+        return 1
+    fi
+
+    local smtp_port="${SMTP_PORT:-587}"
+    local smtp_user="${SMTP_USER:-}"
+    local smtp_password="${SMTP_PASSWORD:-}"
+    local smtp_from="${SMTP_FROM:-${smtp_user:-patchmox@localhost}}"
+
+    local rcpt_args=()
+    local IFS=','
+    for addr in $to_header; do
+        [[ -z "$addr" ]] && continue
+        rcpt_args+=(--mail-rcpt "$addr")
+    done
+
+    local protocol tls_flag=()
+    case "$smtp_port" in
+        25)
+            protocol="smtp"
+            tls_flag=(--ssl)
+            ;;
+        587)
+            protocol="smtp"
+            tls_flag=(--ssl-reqd)
+            ;;
+        465)
+            protocol="smtps"
+            tls_flag=()
+            ;;
+        *)
+            protocol="smtp"
+            tls_flag=(--ssl-reqd)
+            ;;
+    esac
+
+    local auth_flag=()
+    if [[ -n "$smtp_user" && -n "$smtp_password" ]]; then
+        auth_flag=(--user "${smtp_user}:${smtp_password}")
+    fi
+
+    local email_data
+    email_data=$(cat <<EOF
+From: $smtp_from
+To: $to_header
+Subject: $subject
+Date: $(date -R)
+MIME-Version: 1.0
+Content-Type: ${content_type}; charset="UTF-8"
+
+$body
+EOF
+    )
+
+    if curl --silent --show-error \
+        --url "${protocol}://${SMTP_HOST}:${smtp_port}" \
+        "${tls_flag[@]}" \
+        "${auth_flag[@]}" \
+        --mail-from "$smtp_from" \
+        "${rcpt_args[@]}" \
+        --upload-file - <<< "$email_data"; then
+        log_info "SMTP notification sent to $to_header"
+        return 0
+    else
+        log_error "Failed to send SMTP notification to $to_header"
+        return 1
+    fi
+}
