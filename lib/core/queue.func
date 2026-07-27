@@ -74,15 +74,19 @@ function list_eligible_pending_jobs() {
     local now
     now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-    find "${QUEUE_DIR}/pending" -maxdepth 1 -type f -name '*.json' -print0 2>/dev/null | \
-        xargs -0 -r ls -tr 2>/dev/null | \
-        while IFS= read -r job_file; do
-            local next
-            next=$(jq -r '.next_attempt_at // ""' "$job_file" 2>/dev/null)
-            if [[ -n "$next" && ( "$next" < "$now" || "$next" == "$now" ) ]]; then
-                echo "$job_file"
-            fi
-        done
+    local count=0
+    local job_file
+    while IFS= read -r job_file; do
+        local next
+        next=$(jq -r '.next_attempt_at // ""' "$job_file" 2>/dev/null)
+        if [[ -n "$next" && ( "$next" < "$now" || "$next" == "$now" ) ]]; then
+            echo "$job_file"
+            count=$((count + 1))
+        fi
+    done < <(find "${QUEUE_DIR}/pending" -maxdepth 1 -type f -name '*.json' -print0 2>/dev/null | \
+        xargs -0 -r ls -tr 2>/dev/null)
+
+    log_debug "Found $count eligible pending job(s)"
 }
 
 # @function claim_job

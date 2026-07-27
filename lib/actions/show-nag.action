@@ -22,6 +22,7 @@ escape_sed_replacement() {
 # @description Generates SVG banner showing both VirtIO and QEMU GA update availability
 function build_svg_update_nag() {
   local vmid=$1
+  log_debug "Building combined VirtIO+QEMU GA SVG nag for VM $vmid"
   local vmVirtIOCurrentVersion
   vmVirtIOCurrentVersion="$(escape_sed_replacement "$2")"
   local vmVirtIOLatestVersion
@@ -52,6 +53,7 @@ function build_svg_update_nag() {
 # @description Generates SVG banner showing VirtIO update availability only
 function build_svg_virtio_update_nag() {
     local vmid=$1
+  log_debug "Building VirtIO-only SVG nag for VM $vmid"
   local vmVirtIOCurrentVersion
   vmVirtIOCurrentVersion="$(escape_sed_replacement "$2")"
   local vmVirtIOLatestVersion
@@ -72,6 +74,7 @@ function build_svg_virtio_update_nag() {
 # @description Generates SVG banner showing QEMU Guest Agent update availability only
 function build_svg_qemu_ga_update_nag() {
     local vmid=$1
+  log_debug "Building QEMU GA-only SVG nag for VM $vmid"
   local vmQEMUGACurrentVersion
   vmQEMUGACurrentVersion="$(escape_sed_replacement "$2")"
   local vmQEMUGALatestVersion

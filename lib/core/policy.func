@@ -67,6 +67,7 @@ function _policy_matches_event() {
         local event_type
         event_type=$(echo "$event_json" | jq -r '.type // ""')
         if [[ "$event_type" != "$match_type" ]]; then
+            log_debug "Policy match fail: type '$event_type' != '$match_type'"
             return 1
         fi
     fi
@@ -76,6 +77,7 @@ function _policy_matches_event() {
         local event_vmid
         event_vmid=$(echo "$payload_json" | jq -r '.vmid // ""')
         if [[ "$event_vmid" != "$match_vmid" ]]; then
+            log_debug "Policy match fail: vmid '$event_vmid' != '$match_vmid'"
             return 1
         fi
     fi
@@ -85,6 +87,7 @@ function _policy_matches_event() {
         local event_node
         event_node=$(echo "$payload_json" | jq -r '.node // ""')
         if [[ "$event_node" != "$match_node" ]]; then
+            log_debug "Policy match fail: node '$event_node' != '$match_node'"
             return 1
         fi
     fi

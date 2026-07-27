@@ -109,8 +109,11 @@ function load_vm_state() {
     local state_file="$STATE_DIR/vm-${vmid}.state"
     
     if [[ ! -f "$state_file" ]]; then
+        log_debug "No state file found for VM $vmid"
         return 1
     fi
+    
+    log_debug "Loading state for VM $vmid from $state_file"
     
     # Initialize variables with defaults
     local vmgenid="unknown"
@@ -234,9 +237,11 @@ function get_cached_guest_versions() {
     local current_status="${3:-}"
 
     if ! is_guest_agent_cache_valid "$vmid" "$current_vmgenid" "$current_status"; then
+        log_debug "Guest-agent cache miss for VM $vmid — will query guest agent"
         return 1
     fi
 
+    log_debug "Guest-agent cache hit for VM $vmid — returning cached versions"
     jq -n \
         --arg virtio "$STORED_VIRTIO_VERSION" \
         --arg qemu_ga "$STORED_QEMU_GA_VERSION" \

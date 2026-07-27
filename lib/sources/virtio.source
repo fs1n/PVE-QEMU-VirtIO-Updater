@@ -38,16 +38,19 @@ function _version_cache_is_valid() {
     cache_file=$(_version_cache_path) || return 1
 
     if [[ ! -f "$cache_file" ]]; then
+        log_debug "Version cache miss: file not found ($cache_file)"
         return 1
     fi
 
     if [[ "$VERSION_CACHE_FORCE_REFRESH" == "true" ]]; then
+        log_debug "Version cache miss: force refresh enabled"
         return 1
     fi
 
     local fetched_at now_epoch fetched_epoch ttl_seconds
     fetched_at=$(jq -r '.fetched_at // empty' "$cache_file" 2>/dev/null)
     if [[ -z "$fetched_at" ]]; then
+        log_debug "Version cache miss: no fetched_at timestamp in cache file"
         return 1
     fi
 
@@ -55,10 +58,13 @@ function _version_cache_is_valid() {
     fetched_epoch=$(date -u -d "$fetched_at" '+%s' 2>/dev/null || echo 0)
     ttl_seconds=$((VERSION_CACHE_TTL_MINUTES * 60))
 
-    if [[ $((now_epoch - fetched_epoch)) -le $ttl_seconds ]]; then
+    local age_seconds=$((now_epoch - fetched_epoch))
+    if [[ $age_seconds -le $ttl_seconds ]]; then
+        log_debug "Version cache hit: age ${age_seconds}s, TTL ${ttl_seconds}s (fetched_at: $fetched_at)"
         return 0
     fi
 
+    log_debug "Version cache miss: expired (age ${age_seconds}s > TTL ${ttl_seconds}s)"
     return 1
 }
 
@@ -87,6 +93,7 @@ function _write_version_cache() {
     local cache_file
     cache_file=$(_version_cache_path) || return 1
 
+    log_debug "Writing version cache to $cache_file (TTL: ${VERSION_CACHE_TTL_MINUTES}m)"
     jq -n \
         --arg fetched_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
         --arg ttl_minutes "$VERSION_CACHE_TTL_MINUTES" \
@@ -99,16 +106,17 @@ function _write_version_cache() {
 # @function _fetch_remote_virtio_version
 # @description Actually fetches the latest VirtIO version from Fedora People Archive.
 function _fetch_remote_virtio_version() {
+    log_debug "Fetching VirtIO version from $FEDORA_VIRTIO_URL"
     local archive_page
     archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_VIRTIO_URL}") || {
-        log_error "Failed to fetch Fedora People Archive page"
+        log_error "Failed to fetch Fedora People Archive page (VirtIO): curl error"
     }
 
     local http_code=$(echo "$archive_page" | tail -n1)
     local page_content=$(echo "$archive_page" | sed '$d')
 
     if [ "$http_code" != "200" ]; then
-        log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+        log_error "Failed to access Fedora People Archive (VirtIO). HTTP Status: ${http_code}"
     fi
 
     local latest_json
@@ -132,25 +140,27 @@ function _fetch_remote_virtio_version() {
     )
 
     if [ -z "$latest_json" ]; then
-        log_error "Could not find any virtio-win directory versions"
+        log_error "Could not find any virtio-win directory versions in archive page"
     fi
 
+    log_debug "Fetched VirtIO version: $latest_json"
     echo "$latest_json"
 }
 
 # @function _fetch_remote_qemu_ga_version
 # @description Actually fetches the latest QEMU Guest Agent version from Fedora People Archive.
 function _fetch_remote_qemu_ga_version() {
+    log_debug "Fetching QEMU GA version from $FEDORA_QEMU_GA_URL"
     local archive_page
     archive_page=$(curl -sS -w "\n%{http_code}" "${FEDORA_QEMU_GA_URL}") || {
-        log_error "Failed to fetch Fedora People Archive page"
+        log_error "Failed to fetch Fedora People Archive page (QEMU GA): curl error"
     }
 
     local http_code=$(echo "$archive_page" | tail -n1)
     local page_content=$(echo "$archive_page" | sed '$d')
 
     if [ "$http_code" != "200" ]; then
-        log_error "Failed to access Fedora People Archive. HTTP Status: ${http_code}"
+        log_error "Failed to access Fedora People Archive (QEMU GA). HTTP Status: ${http_code}"
     fi
 
     local latest_json
@@ -172,9 +182,10 @@ function _fetch_remote_qemu_ga_version() {
     )
 
     if [ -z "$latest_json" ]; then
-        log_error "Could not find any qemu-ga-win directory versions"
+        log_error "Could not find any qemu-ga-win directory versions in archive page"
     fi
 
+    log_debug "Fetched QEMU GA version: $latest_json"
     echo "$latest_json"
 }
 
@@ -183,7 +194,7 @@ function _fetch_remote_qemu_ga_version() {
 # @returns JSON object with keys: version, release
 function fetch_latest_virtio_version() {
     if _version_cache_is_valid; then
-        log_debug "Using cached VirtIO/QEMU GA versions"
+        log_debug "Returning cached VirtIO version"
         _read_version_cache | jq -c '.virtio'
         return 0
     fi
@@ -202,10 +213,12 @@ function fetch_latest_virtio_version() {
 # @returns JSON object with keys: version, release
 function fetch_latest_qemu_ga_version() {
     if _version_cache_is_valid; then
+        log_debug "Returning cached QEMU GA version"
         _read_version_cache | jq -c '.qemu_ga'
         return 0
     fi
 
+    log_info "Fetching latest VirtIO and QEMU GA versions from Fedora Archive"
     local virtio_json qemu_ga_json
     virtio_json=$(_fetch_remote_virtio_version)
     qemu_ga_json=$(_fetch_remote_qemu_ga_version)
@@ -239,9 +252,14 @@ function get_windows_vms() {
         ]')
 
     if [[ -z "$qemu_vms" || "$qemu_vms" == "[]" ]]; then
+        log_debug "No QEMU VMs found on cluster"
         echo '{}'
         return 0
     fi
+
+    local total_qemu
+    total_qemu=$(echo "$qemu_vms" | jq 'length')
+    log_debug "Found $total_qemu QEMU VM(s) in cluster resources"
 
     local json_items=""
     local vmid node vm_name status vm_config os_type vmgenid vmgenid_json vm_obj
@@ -276,8 +294,11 @@ function get_windows_vms() {
 
         # Skip non-Windows VMs early — no need to include them in the result.
         if [[ -z "$os_type" || "$os_type" != w* ]]; then
+            log_debug "VM $vmid ($vm_name) is not Windows (ostype: ${os_type:-null}), skipping"
             continue
         fi
+
+        log_debug "VM $vmid ($vm_name) is Windows (ostype: $os_type) on node $node"
 
         vmgenid=$(echo "$vm_config" | jq -r '.vmgenid // empty')
         if [[ -z "$vmgenid" ]]; then
@@ -317,6 +338,7 @@ function _sanitize_version_string() {
     if [[ "$cleaned" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
         echo "$cleaned"
     else
+        log_debug "Sanitized version string rejected (not dotted-numeric): '$cleaned' (raw: '$raw')"
         echo ""
     fi
 }
@@ -327,9 +349,13 @@ function _sanitize_version_string() {
 # @returns String containing version, empty string if not found or error
 function get_windows_virtio_version() {
     local vmid=$1
+    log_debug "Querying VirtIO version via guest agent for VM $vmid"
     local raw_version
     raw_version=$(qm guest exec "$vmid" -- powershell.exe -Command 'Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object { $_.DisplayName } | Where-Object { $_.DisplayName -like "*virtio*installer*" } | Select-Object -ExpandProperty DisplayVersion' 2>/dev/null | jq -r '.["out-data"] // empty')
-    _sanitize_version_string "$raw_version"
+    local sanitized
+    sanitized=$(_sanitize_version_string "$raw_version")
+    log_debug "VM $vmid VirtIO: raw='$raw_version' sanitized='$sanitized'"
+    echo "$sanitized"
 }
 
 # @function get_windows_QEMU_GA_version
@@ -338,9 +364,13 @@ function get_windows_virtio_version() {
 # @returns String containing version, empty string if not found or error
 function get_windows_QEMU_GA_version() {
     local vmid=$1
+    log_debug "Querying QEMU GA version via guest agent for VM $vmid"
     local raw_version
     raw_version=$(qm guest exec "$vmid" -- powershell.exe -Command "\$qemuPaths = @('C:\\Program Files\\Qemu-ga\\qemu-ga.exe', 'C:\\Program Files (x86)\\Qemu-ga\\qemu-ga.exe'); foreach (\$path in \$qemuPaths) { if (Test-Path \$path) { (Get-Item \$path).VersionInfo.FileVersion } }" 2>/dev/null | jq -r '.["out-data"] // empty')
-    _sanitize_version_string "$raw_version"
+    local sanitized
+    sanitized=$(_sanitize_version_string "$raw_version")
+    log_debug "VM $vmid QEMU GA: raw='$raw_version' sanitized='$sanitized'"
+    echo "$sanitized"
 }
 
 # @function get_vm_genid

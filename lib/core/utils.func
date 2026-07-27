@@ -16,6 +16,7 @@ PATCHMOX_DEPS_CACHE_TTL_SECONDS=86400  # 24 hours
 # @description Returns 0 if the dependency cache exists and is newer than TTL.
 function _deps_cache_is_fresh() {
     if [[ ! -f "$PATCHMOX_DEPS_CACHE_FILE" ]]; then
+        log_debug "Deps cache miss: file not found"
         return 1
     fi
 
@@ -24,10 +25,13 @@ function _deps_cache_is_fresh() {
     local mtime
     mtime=$(stat -c %Y "$PATCHMOX_DEPS_CACHE_FILE" 2>/dev/null || stat -f %m "$PATCHMOX_DEPS_CACHE_FILE" 2>/dev/null || echo 0)
 
-    if [[ $(( now - mtime )) -lt $PATCHMOX_DEPS_CACHE_TTL_SECONDS ]]; then
+    local age=$(( now - mtime ))
+    if [[ $age -lt $PATCHMOX_DEPS_CACHE_TTL_SECONDS ]]; then
+        log_debug "Deps cache hit: age ${age}s (TTL ${PATCHMOX_DEPS_CACHE_TTL_SECONDS}s)"
         return 0
     fi
 
+    log_debug "Deps cache miss: expired (age ${age}s > TTL ${PATCHMOX_DEPS_CACHE_TTL_SECONDS}s)"
     return 1
 }
 

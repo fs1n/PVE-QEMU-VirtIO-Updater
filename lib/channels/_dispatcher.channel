@@ -17,17 +17,22 @@ function notification_send() {
     local content_type="${3:-text/plain}"
 
     if [[ -z "${NOTIFICATION_CHANNELS-}" ]]; then
+        log_debug "No notification channels configured (NOTIFICATION_CHANNELS empty), skipping"
         return 0
     fi
+
+    log_debug "Dispatching notification to channels: $NOTIFICATION_CHANNELS (subject: $subject)"
 
     local IFS=','
     read -ra CHANNELS <<< "$NOTIFICATION_CHANNELS"
     for channel in "${CHANNELS[@]}"; do
-        case "$channel" in
+        local trimmed_channel="${channel## }"
+        trimmed_channel="${trimmed_channel%% }"
+        case "$trimmed_channel" in
             smtp) channel_send_smtp "$subject" "$body" "$content_type" ;;
             msgraph) channel_send_msgraph "$subject" "$body" "$content_type" ;;
             webhook) channel_send_webhook "$subject" "$body" "$content_type" ;;
-            *) log_warn "Unknown notification channel: $channel" ;;
+            *) log_warn "Unknown notification channel: $trimmed_channel" ;;
         esac
     done
 }

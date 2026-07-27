@@ -26,6 +26,7 @@ function build_event() {
 
     # Validate that payload is valid JSON
     if ! jq -e . >/dev/null 2>&1 <<< "$payload"; then
+        log_error "build_event received invalid JSON payload for type '$event_type': $payload"
         echo "ERROR: build_event received invalid JSON payload for type '$event_type': $payload" >&2
         return 1
     fi
@@ -33,6 +34,7 @@ function build_event() {
     local event_id
     event_id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s%N)-$$")"
 
+    log_debug "Building event: type=$event_type event_id=$event_id"
     jq -n \
         --arg event_id "$event_id" \
         --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
@@ -80,14 +82,20 @@ function dispatch_event() {
         local subject body
         subject="PatchMox: $event_type"
         body=$(echo "$event_json" | jq -c '.')
+        log_debug "Dispatching notification for event $event_type to channels"
         notification_send "$subject" "$body" 2>/dev/null || true
+    else
+        log_debug "Notification suppressed for event $event_type (policy: notify=false)"
     fi
 
     # Route to actions based on policy decision.
     local action
     action=$(echo "$decision" | jq -r '.action // "none"')
     if [[ "$action" == "auto-update" ]]; then
+        log_debug "Policy action=auto-update for event $event_type — enqueuing job"
         enqueue_job "$event_json" "$decision"
+    else
+        log_debug "Policy action=$action for event $event_type — no enqueue"
     fi
 
     # Echo the decision so callers can use it.
