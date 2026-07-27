@@ -1,0 +1,12 @@
+{
+  "name": "default-notify-only",
+  "description": "Default PatchMox policy: notify administrators, never auto-execute updates.",
+  "match": {},
+  "decision": {
+    "notify": true,
+    "action": "none",
+    "maintenance_window": null,
+    "max_concurrent": 1,
+    "require_snapshot": false
+  }
+}
