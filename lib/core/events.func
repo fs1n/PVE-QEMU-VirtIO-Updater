@@ -43,6 +43,54 @@ function build_event() {
         '{event_id: $event_id, timestamp: $timestamp, type: $type, payload: $payload}'
 }
 
+# @function build_notification_body
+# @description Builds a human-readable notification body from a canonical event.
+# @args event_json (string): canonical PatchMox event
+# @returns Plain text body on stdout
+function build_notification_body() {
+    local event_json="${1:-}"
+    local event_type vmid node components
+    event_type=$(echo "$event_json" | jq -r '.type // "unknown"')
+    vmid=$(echo "$event_json" | jq -r '.payload.vmid // "unknown"')
+    node=$(echo "$event_json" | jq -r '.payload.node // "unknown"')
+    components=$(echo "$event_json" | jq -r '.payload.components | join(", ") // "none"')
+
+    local body=""
+    case "$event_type" in
+        update.available)
+            local virtio_current virtio_latest qemu_current qemu_latest
+            virtio_current=$(echo "$event_json" | jq -r '.payload.current.virtio // "unknown"')
+            virtio_latest=$(echo "$event_json" | jq -r '.payload.latest.virtio // "unknown"')
+            qemu_current=$(echo "$event_json" | jq -r '.payload.current.qemu_ga // "unknown"')
+            qemu_latest=$(echo "$event_json" | jq -r '.payload.latest.qemu_ga // "unknown"')
+
+            body="PatchMox detected available updates for VM $vmid on node $node.
+
+Components needing update: $components
+
+"
+            if [[ "$components" == *"virtio"* ]]; then
+                body+="VirtIO Drivers: $virtio_current → $virtio_latest
+"
+            fi
+            if [[ "$components" == *"qemu-ga"* ]]; then
+                body+="QEMU Guest Agent: $qemu_current → $qemu_latest
+"
+            fi
+            body+="
+Update recommended during your next maintenance window."
+            ;;
+        *)
+            body="PatchMox event: $event_type
+
+Event details:
+$(echo "$event_json" | jq -c '.payload // {}')"
+            ;;
+    esac
+
+    echo "$body"
+}
+
 # @function emit_event
 # @description Builds and emits a canonical JSON event to stdout.
 #              This is the low-level primitive. Prefer dispatch_event which
@@ -81,9 +129,9 @@ function dispatch_event() {
     if [[ "$should_notify" == "true" ]]; then
         local subject body
         subject="PatchMox: $event_type"
-        body=$(echo "$event_json" | jq -c '.')
+        body=$(build_notification_body "$event_json")
         log_debug "Dispatching notification for event $event_type to channels"
-        notification_send "$subject" "$body" 2>/dev/null || true
+        notification_send "$subject" "$body" || log_warn "Notification delivery failed for event $event_type"
     else
         log_debug "Notification suppressed for event $event_type (policy: notify=false)"
     fi
