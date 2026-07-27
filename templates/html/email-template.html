@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VirtIO Update Notification</title>
+    <style>
+        /* Base Styles & Typography */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #1e293b;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 40px 10px;
+        }
+
+        .email-wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -6px rgba(0, 0, 0, 0.04);
+        }
+
+        /* Header: Inspired by SVG Gradient */
+        .header {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            padding: 40px 20px;
+            text-align: center;
+            color: #ffffff;
+        }
+
+        .header-icon {
+            display: inline-block;
+            width: 44px;
+            height: 44px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            line-height: 44px;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            text-transform: none; /* Modernized from uppercase */
+        }
+
+        /* Content Area */
+        .content {
+            padding: 40px 30px;
+        }
+
+        .greeting {
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+
+        .intro-text {
+            color: #64748b;
+            margin-bottom: 30px;
+        }
+
+        /* VM Info Card: Subtle & Clean */
+        .vm-card {
+            background-color: #f1f5f9;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .vm-card-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .vm-grid {
+            display: table;
+            width: 100%;
+        }
+
+        .vm-item {
+            display: table-cell;
+            width: 50%;
+        }
+
+        .vm-item strong {
+            display: block;
+            font-size: 13px;
+            color: #475569;
+        }
+
+        .vm-item span {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        /* Updates Table: Mimics SVG Row Styles */
+        .update-container {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .update-header th {
+            text-align: left;
+            padding: 10px;
+            font-size: 12px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .update-cell {
+            padding: 16px 10px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 14px;
+        }
+
+        .version-label {
+            font-family: 'ui-monospace', monospace;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        /* Available Version Highlight: Matches SVG #60a5fa */
+        .latest-highlight {
+            font-family: 'ui-monospace', monospace;
+            color: #4f46e5; /* Indigo primary */
+            background: #eef2ff;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: 700;
+        }
+
+        /* Button: Modern Solid Indigo */
+        .btn-wrapper {
+            text-align: center;
+            margin-top: 35px;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background-color: #4f46e5;
+            color: #ffffff !important;
+            padding: 14px 32px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+        }
+
+        /* Info Note from SVG */
+        .info-note {
+            display: flex;
+            align-items: center;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 25px;
+        }
+
+        .info-icon {
+            background: #94a3b8;
+            color: white;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 16px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-right: 10px;
+            display: inline-block;
+        }
+
+        /* Footer */
+        .footer {
+            padding: 30px;
+            text-align: center;
+            background-color: #ffffff;
+            border-top: 1px solid #f1f5f9;
+        }
+
+        .footer-text {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 10px;
+        }
+
+        .footer-links a {
+            color: #6366f1;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        @media only screen and (max-width: 480px) {
+            .vm-item { display: block; width: 100%; margin-bottom: 10px; }
+            .content { padding: 30px 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="header">
+            <div class="header-icon">!</div>
+            <h1>VirtIO System Update</h1>
+        </div>
+        
+        <div class="content">
+            <div class="greeting">Hello,</div>
+            <p class="intro-text">A new VirtIO driver and/or QEMU Guest Agent update is available for your virtual machine on <strong>{{NODE_NAME}}</strong>.</p>
+            
+            <div class="vm-card">
+                <span class="vm-card-title">Instance Details</span>
+                <div class="vm-grid">
+                    <div class="vm-item">
+                        <strong>Virtual Machine</strong>
+                        <span>{{VM_NAME}}</span>
+                    </div>
+                    <div class="vm-item">
+                        <strong>VM ID</strong>
+                        <span>#{{VMID}}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: #0f172a;">Available Component Updates</h2>
+            
+            <table class="update-container">
+                <thead>
+                    <tr class="update-header">
+                        <th>Component</th>
+                        <th>Current</th>
+                        <th>Latest</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="update-cell"><strong>VirtIO Drivers</strong></td>
+                        <td class="update-cell"><span class="version-label">{{CURRENT_VIRTIO_VERSION}}</span></td>
+                        <td class="update-cell"><span class="latest-highlight">{{LATEST_VIRTIO_VERSION}}</span></td>
+                    </tr>
+                    <tr>
+                        <td class="update-cell"><strong>QEMU Guest Agent</strong></td>
+                        <td class="update-cell"><span class="version-label">{{CURRENT_QEMU_GA_VERSION}}</span></td>
+                        <td class="update-cell"><span class="latest-highlight">{{LATEST_QEMU_GA_VERSION}}</span></td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="info-note">
+                <span class="info-icon">i</span>
+                <span style="font-size: 13px; color: #64748b;">Update recommended during your next maintenance window for optimal stability.</span>
+            </div>
+            
+            <div class="btn-wrapper">
+                <a href="{{UPDATE_LINK}}" class="cta-button">View Update Instructions</a>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p class="footer-text">
+                <strong>Release Date:</strong> {{RELEASE_DATE}}<br>
+                Scan performed: {{LAST_CHECKED}}
+            </p>
+            <div class="footer-links">
+                <a href="https://github.com/fs1n/PVE-QEMU-VirtIO-Updater">Documentation</a> &bull; 
+                <a href="https://github.com/fs1n/PVE-QEMU-VirtIO-Updater">GitHub</a>
+            </div>
+            <p class="footer-text" style="margin-top: 20px;">&copy; 2026 PatchMox</p>
+        </div>
+    </div>
+</body>
+</html>
